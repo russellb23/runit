@@ -1,5 +1,5 @@
-use axum::{routing::{get, post}, Router};
-use crate::{acknowledge, create_alert, events, get_incident, list_incidents, resolve, AppState};
+use axum::{ routing::{ get, post }, Router };
+use crate::{ acknowledge, create_alert, events, get_incident, list_incidents, resolve, AppState };
 
 pub(super) fn router() -> Router<AppState> {
     Router::new()

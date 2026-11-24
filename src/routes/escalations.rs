@@ -1,5 +1,5 @@
-use axum::{routing::{get, put}, Router};
-use crate::{create_policy, delete_policy, list_policies, update_policy, AppState};
+use axum::{ routing::{ get, put }, Router };
+use crate::{ create_policy, delete_policy, list_policies, update_policy, AppState };
 
 pub(super) fn router() -> Router<AppState> {
     Router::new()

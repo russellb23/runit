@@ -1,5 +1,5 @@
-use axum::{routing::{get, put}, Router};
-use crate::{create_schedule, delete_schedule, list_schedules, update_schedule, AppState};
+use axum::{ routing::{ get, put }, Router };
+use crate::{ create_schedule, delete_schedule, list_schedules, update_schedule, AppState };
 
 pub(super) fn router() -> Router<AppState> {
     Router::new()
