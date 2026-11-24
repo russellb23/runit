@@ -1,0 +1,988 @@
+openapi: 3.0.3
+info:
+  title: RelayOps API
+  version: 0.1.0
+  description: >-
+    Multi-tenant incident ingestion, response, escalation, notification, account,
+    connector, and tenant management API. Tenant scope comes from the authenticated
+    API key or browser session; callers must not provide a tenant ID to select scope.
+  contact:
+    name: RelayOps maintainers
+servers:
+  - url: /
+    description: Same origin as the RelayOps deployment
+tags:
+  - name: Health
+  - name: Authentication
+  - name: Incidents
+  - name: Analytics
+  - name: Escalations
+  - name: Notifications
+  - name: Integrations
+  - name: Tenant administration
+security:
+  - bearerAuth: []
+  - relayopsSession: []
+paths:
+  /openapi.yaml:
+    get:
+      tags: [Health]
+      operationId: getOpenApiSpec
+      summary: Download the OpenAPI specification
+      security: []
+      responses:
+        '200': { description: OpenAPI 3.0 YAML, content: { application/yaml: { schema: { type: string } } } }
+  /docs:
+    get:
+      tags: [Health]
+      operationId: swaggerUi
+      summary: Open interactive Swagger UI
+      security: []
+      responses:
+        '200': { description: Swagger UI HTML, content: { text/html: { schema: { type: string } } } }
+  /healthz:
+    get:
+      tags: [Health]
+      operationId: healthCheck
+      summary: Check API health
+      security: []
+      responses:
+        '200': { description: API process is healthy, content: { application/json: { schema: { type: object, properties: { status: { type: string, example: ok } } } } } }
+  /v1/auth/login:
+    post:
+      tags: [Authentication]
+      operationId: login
+      summary: Create a browser session
+      description: On success, sets the HttpOnly relayops_session cookie. Five consecutive failures lock the account for 15 minutes.
+      security: []
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/LoginInput' } } }
+      responses:
+        '200': { description: Signed in; session cookie set, content: { application/json: { schema: { $ref: '#/components/schemas/LoginResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/auth/setup:
+    post:
+      tags: [Authentication]
+      operationId: setupLogin
+      summary: Create the first tenant owner login
+      description: Owner API key required. Only succeeds when this tenant has no login accounts. The response sets a browser session cookie.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/NewLoginAccount' } } }
+      responses:
+        '200': { description: Owner account created and signed in, content: { application/json: { schema: { type: object } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/auth/recover:
+    post:
+      tags: [Authentication]
+      operationId: recoverLogin
+      summary: Reset an account password
+      description: Requires an active tenant owner API key, not a login password. Resets the named active account password and revokes all its sessions. The message is intentionally generic when the email is not found.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RecoverLoginInput' } } }
+      responses:
+        '200': { description: Generic recovery result, content: { application/json: { schema: { type: object, properties: { message: { type: string } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/auth/me:
+    get:
+      tags: [Authentication]
+      operationId: currentLogin
+      summary: Read current login, tenant, and session
+      security: [{ relayopsSession: [] }]
+      responses:
+        '200': { description: Current authenticated login, content: { application/json: { schema: { type: object } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/auth/logout:
+    post:
+      tags: [Authentication]
+      operationId: logout
+      summary: Revoke the current browser session
+      security: [{ relayopsSession: [] }]
+      responses:
+        '204': { description: Session revoked and cookie expired }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/auth/sessions:
+    get:
+      tags: [Authentication]
+      operationId: listSessions
+      summary: List current user's active browser sessions
+      security: [{ relayopsSession: [] }]
+      responses:
+        '200': { description: Session list, content: { application/json: { schema: { type: object, properties: { sessions: { type: array, items: { $ref: '#/components/schemas/Session' } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/auth/sessions/{id}:
+    delete:
+      tags: [Authentication]
+      operationId: revokeSession
+      summary: Revoke one of the current user's sessions
+      security: [{ relayopsSession: [] }]
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      responses:
+        '204': { description: Session revoked; cookie expired if this is the current session }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/auth/accounts:
+    get:
+      tags: [Authentication]
+      operationId: listLoginAccounts
+      summary: List tenant login accounts
+      description: Owner or admin role required.
+      responses:
+        '200': { description: Login accounts, content: { application/json: { schema: { type: object, properties: { accounts: { type: array, items: { $ref: '#/components/schemas/LoginAccount' } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Authentication]
+      operationId: createLoginAccount
+      summary: Create a tenant login account
+      description: Owner and admin roles may create accounts. Admins cannot assign owner or admin roles.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/NewLoginAccount' } } }
+      responses:
+        '201': { description: Account created, content: { application/json: { schema: { type: object, properties: { account: { $ref: '#/components/schemas/LoginAccount' } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/alerts:
+    post:
+      tags: [Incidents]
+      operationId: ingestAlert
+      summary: Create or update an incident from an alert
+      description: Owner, admin, responder, or integration role. Tenant-scoped dedup_key updates an existing incident; a fresh alert reopens a resolved incident. A linked escalation policy queues an escalation.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AlertInput' } } }
+      responses:
+        '200': { description: Existing incident updated, content: { application/json: { schema: { type: object, properties: { incident: { $ref: '#/components/schemas/Incident' } } } } }
+        '201': { description: Incident created, content: { application/json: { schema: { type: object, properties: { incident: { $ref: '#/components/schemas/Incident' } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/incidents:
+    get:
+      tags: [Incidents]
+      operationId: listIncidents
+      summary: List recent tenant incidents
+      description: Returns at most 500 tenant incidents and the unfiltered tenant total. The optional search performs a case-insensitive partial match against the human incident key, internal UUID, title, description, severity, status, source, service, deduplication key, or assignee; matching_incidents reports the full match count.
+      parameters:
+        - name: search
+          in: query
+          required: false
+          description: Case-insensitive partial match for an incident key such as RLY-00001234, internal UUID, or title.
+          schema: { type: string, maxLength: 200 }
+      responses:
+        '200': { description: Incident collection, content: { application/json: { schema: { type: object, properties: { incidents: { type: array, items: { $ref: '#/components/schemas/Incident' } }, total_incidents: { type: integer, format: int64 }, matching_incidents: { type: integer, format: int64 } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/incidents/{id}:
+    get:
+      tags: [Incidents]
+      operationId: getIncident
+      summary: Read one incident
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      responses:
+        '200': { description: Incident, content: { application/json: { schema: { type: object, properties: { incident: { $ref: '#/components/schemas/Incident' } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/incidents/{id}/acknowledge:
+    post:
+      tags: [Incidents]
+      operationId: acknowledgeIncident
+      summary: Acknowledge and optionally assign an incident
+      description: Owner, admin, or responder role. Writes an incident event and cancels active escalation.
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/IncidentAction' } } } }
+      responses:
+        '200': { description: Updated incident, content: { application/json: { schema: { type: object, properties: { incident: { $ref: '#/components/schemas/Incident' } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/incidents/{id}/resolve:
+    post:
+      tags: [Incidents]
+      operationId: resolveIncident
+      summary: Resolve an incident
+      description: Owner, admin, or responder role. Writes a resolution event and cancels active escalation.
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/IncidentAction' } } } }
+      responses:
+        '200': { description: Updated incident, content: { application/json: { schema: { type: object, properties: { incident: { $ref: '#/components/schemas/Incident' } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/incidents/{id}/events:
+    get:
+      tags: [Incidents]
+      operationId: listIncidentEvents
+      summary: List a tenant incident's audit events
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      responses:
+        '200': { description: Chronological incident events, content: { application/json: { schema: { type: object, properties: { events: { type: array, items: { $ref: '#/components/schemas/IncidentEvent' } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/analytics/incidents:
+    get:
+      tags: [Analytics]
+      operationId: incidentAnalytics
+      summary: Read total incidents by source and assignee
+      responses:
+        '200': { description: Tenant incident totals, content: { application/json: { schema: { type: object, properties: { total: { type: integer, format: int64 }, by_integration: { type: array, items: { $ref: '#/components/schemas/CountPair' } }, by_user: { type: array, items: { $ref: '#/components/schemas/CountPair' } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/escalation-policies:
+    get:
+      tags: [Escalations]
+      operationId: listEscalationPolicies
+      summary: List tenant escalation policies
+      responses:
+        '200': { description: Policies, content: { application/json: { schema: { type: object, properties: { policies: { type: array, items: { $ref: '#/components/schemas/EscalationPolicy' } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Escalations]
+      operationId: createEscalationPolicy
+      summary: Create an escalation policy
+      description: Owner or admin role.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/EscalationPolicyInput' } } } }
+      responses:
+        '201': { description: Policy created, content: { application/json: { schema: { type: object, properties: { policy: { $ref: '#/components/schemas/EscalationPolicy' } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/escalation-policies/{id}:
+    put:
+      tags: [Escalations]
+      operationId: updateEscalationPolicy
+      summary: Replace an escalation policy
+      description: Owner or admin role.
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/EscalationPolicyInput' } } } }
+      responses:
+        '200': { description: Updated policy, content: { application/json: { schema: { type: object, properties: { policy: { $ref: '#/components/schemas/EscalationPolicy' } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Escalations]
+      operationId: deleteEscalationPolicy
+      summary: Delete an escalation policy
+      description: Owner or admin role. Linked incidents are retained and have the policy reference cleared.
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      responses:
+        '204': { description: Policy deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/notification-recipients:
+    get:
+      tags: [Notifications]
+      operationId: listRecipients
+      summary: List raw notification targets
+      description: Owner or admin role.
+      responses:
+        '200': { description: Recipients, content: { application/json: { schema: { type: object, properties: { recipients: { type: array, items: { $ref: '#/components/schemas/Recipient' } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Notifications]
+      operationId: createRecipient
+      summary: Create a notification target
+      description: Owner or admin role. Supported channels are email and HTTPS webhook.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RecipientInput' } } } }
+      responses:
+        '201': { description: Recipient created, content: { application/json: { schema: { type: object, properties: { recipient: { $ref: '#/components/schemas/Recipient' } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/notification-recipients/{id}:
+    put:
+      tags: [Notifications]
+      operationId: updateRecipient
+      summary: Replace a notification target
+      description: Owner or admin role.
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RecipientInput' } } } }
+      responses:
+        '200': { description: Updated recipient, content: { application/json: { schema: { type: object, properties: { recipient: { $ref: '#/components/schemas/Recipient' } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Notifications]
+      operationId: deactivateRecipient
+      summary: Deactivate a notification target
+      description: Owner or admin role. Soft-deactivates the target.
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      responses:
+        '204': { description: Target deactivated }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/notification-users:
+    get:
+      tags: [Notifications]
+      operationId: listNotificationUsers
+      summary: List responder channel profiles
+      description: Owner or admin role. Profiles are assembled from notification recipients.
+      responses:
+        '200': { description: User profiles, content: { application/json: { schema: { type: object, properties: { users: { type: array, items: { $ref: '#/components/schemas/NotificationUser' } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Notifications]
+      operationId: createNotificationUser
+      summary: Create or configure a responder's channels
+      description: Owner or admin role. Configured email/webhook channels are persisted as notification recipient records.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/NotificationUserCreateInput' } } } }
+      responses:
+        '201': { description: User profile created, content: { application/json: { schema: { type: object, properties: { user: { $ref: '#/components/schemas/NotificationUser' } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/notification-users/{handle}:
+    put:
+      tags: [Notifications]
+      operationId: updateNotificationUser
+      summary: Replace a responder's team, groups, and channels
+      description: Owner or admin role.
+      parameters: [{ name: handle, in: path, required: true, schema: { type: string, maxLength: 120 } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/NotificationUserInput' } } } }
+      responses:
+        '200': { description: Updated profile, content: { application/json: { schema: { type: object, properties: { user: { $ref: '#/components/schemas/NotificationUser' } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [Notifications]
+      operationId: deactivateNotificationUser
+      summary: Deactivate all responder channels
+      description: Owner or admin role.
+      parameters: [{ name: handle, in: path, required: true, schema: { type: string, maxLength: 120 } }]
+      responses:
+        '204': { description: All matching channels deactivated }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/notification-deliveries:
+    get:
+      tags: [Notifications]
+      operationId: listNotificationDeliveries
+      summary: List the 500 newest notification deliveries
+      description: Owner or admin role. Includes pending, sending, delivered, dead, and cancelled outbox rows.
+      responses:
+        '200': { description: Delivery queue records, content: { application/json: { schema: { type: object, properties: { deliveries: { type: array, items: { $ref: '#/components/schemas/Delivery' } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/notification-deliveries/{id}/retry:
+    post:
+      tags: [Notifications]
+      operationId: retryNotificationDelivery
+      summary: Requeue a dead delivery
+      description: Owner or admin role. Only dead deliveries can be retried; attempts are reset to zero.
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      responses:
+        '204': { description: Delivery returned to pending queue }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/schedules:
+    get:
+      tags: [Escalations]
+      operationId: listOnCallSchedules
+      summary: List tenant on-call rotations
+      responses:
+        '200': { description: Schedules and ordered responder handles, content: { application/json: { schema: { type: object, properties: { schedules: { type: array, items: { $ref: '#/components/schemas/OnCallSchedule' } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Escalations]
+      operationId: createOnCallSchedule
+      summary: Create a rotating on-call schedule
+      description: Owner or admin role. Every member must have an active notification channel. Use the schedule name as an escalation step target of type schedule. Rotation intervals are elapsed minutes from rotation_starts_at; timezone is an IANA display timezone.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OnCallScheduleInput' } } } }
+      responses:
+        '201': { description: Schedule created, content: { application/json: { schema: { type: object, properties: { schedule: { $ref: '#/components/schemas/OnCallSchedule' } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/schedules/{id}:
+    put:
+      tags: [Escalations]
+      operationId: updateOnCallSchedule
+      summary: Replace a rotation configuration
+      description: Owner or admin role. Replaces schedule members and anchor time atomically.
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OnCallScheduleInput' } } } }
+      responses:
+        '200': { description: Schedule updated, content: { application/json: { schema: { type: object, properties: { schedule: { $ref: '#/components/schemas/OnCallSchedule' } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Escalations]
+      operationId: deleteOnCallSchedule
+      summary: Delete an on-call schedule
+      description: Owner or admin role. Escalation steps referring to the deleted schedule will remain configured and retry target resolution until updated.
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      responses:
+        '204': { description: Schedule deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/integration-catalog:
+    get:
+      tags: [Integrations]
+      operationId: listIntegrationCatalog
+      summary: List connector definitions and configurable fields
+      description: Owner or admin role. Catalog availability does not guarantee that a provider adapter is implemented.
+      responses:
+        '200': { description: Connector catalog, content: { application/json: { schema: { type: object, properties: { connectors: { type: array, items: { $ref: '#/components/schemas/ConnectorDefinition' } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/integrations:
+    get:
+      tags: [Integrations]
+      operationId: listIntegrations
+      summary: List tenant integrations
+      description: Owner or admin role.
+      responses:
+        '200': { description: Integration configurations, content: { application/json: { schema: { type: object, properties: { integrations: { type: array, items: { $ref: '#/components/schemas/Integration' } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Integrations]
+      operationId: createIntegration
+      summary: Add a tenant connector configuration
+      description: Owner or admin role. Do not send credential values in configuration; use credential_reference to identify an external secret.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/IntegrationInput' } } } }
+      responses:
+        '201': { description: Integration created, content: { application/json: { schema: { type: object, properties: { integration: { $ref: '#/components/schemas/Integration' } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/integrations/{id}:
+    put:
+      tags: [Integrations]
+      operationId: updateIntegration
+      summary: Replace an integration configuration
+      description: Owner or admin role. Revalidation status resets after an edit.
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/IntegrationInput' } } } }
+      responses:
+        '200': { description: Updated integration, content: { application/json: { schema: { type: object, properties: { integration: { $ref: '#/components/schemas/Integration' } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Integrations]
+      operationId: deleteIntegration
+      summary: Delete an integration configuration
+      description: Owner or admin role.
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      responses:
+        '204': { description: Integration deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/integrations/{id}/validate:
+    post:
+      tags: [Integrations]
+      operationId: validateIntegration
+      summary: Validate a connector configuration
+      description: Owner or admin role. Validates configuration shape and reports whether an adapter exists; it does not make a provider API call.
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      responses:
+        '200': { description: Validation result, content: { application/json: { schema: { type: object, properties: { integration: { $ref: '#/components/schemas/Integration' }, validation_scope: { type: string }, provider_adapter_available: { type: boolean } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/tenant:
+    get:
+      tags: [Tenant administration]
+      operationId: currentTenant
+      summary: Read the authenticated tenant and role
+      responses:
+        '200': { description: Tenant and access context, content: { application/json: { schema: { type: object, properties: { tenant: { $ref: '#/components/schemas/Tenant' }, role: { type: string }, is_product_owner: { type: boolean } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/tenants:
+    get:
+      tags: [Tenant administration]
+      operationId: listTenants
+      summary: List tenant records
+      description: A product-owner platform key or product-owner login sees all tenants; a tenant owner sees only its own tenant.
+      responses:
+        '200': { description: Tenant list, content: { application/json: { schema: { type: object, properties: { tenants: { type: array, items: { $ref: '#/components/schemas/Tenant' } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Tenant administration]
+      operationId: createTenant
+      summary: Create a tenant and issue its initial API key
+      description: Product-owner platform key or product-owner login only. The raw API key is returned once; store it securely.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/NewTenant' } } } }
+      responses:
+        '201': { description: Tenant and initial key created, content: { application/json: { schema: { type: object, properties: { tenant: { $ref: '#/components/schemas/Tenant' }, api_key: { type: string }, warning: { type: string } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/tenants/{tenant_id}/rotate-key:
+    post:
+      tags: [Tenant administration]
+      operationId: rotateTenantKey
+      summary: Rotate all API keys for a tenant
+      description: Product-owner platform key or product-owner login only. All existing tenant API keys are disabled and a replacement is returned once.
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Replacement key, content: { application/json: { schema: { type: object, properties: { tenant_id: { type: string, format: uuid }, api_key: { type: string }, warning: { type: string } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/tenants/{tenant_id}/api-keys:
+    get:
+      tags: [Tenant administration]
+      operationId: listTenantKeysForProductOwner
+      summary: List a tenant's API key metadata
+      description: Product-owner platform key or product-owner login only. The tenant ID scopes all returned key records; raw secrets are never returned.
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Tenant API key metadata, content: { application/json: { schema: { type: object, properties: { api_keys: { type: array, items: { $ref: '#/components/schemas/ApiKey' } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/tenants/{tenant_id}/api-keys/{id}:
+    put:
+      tags: [Tenant administration]
+      operationId: updateTenantKeyExpirationForProductOwner
+      summary: Update a tenant API key expiration
+      description: Product-owner platform key or product-owner login only. Send expires_at as an ISO 8601 timestamp; null clears expiration.
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateApiKey' } } } }
+      responses:
+        '200': { description: Updated key metadata, content: { application/json: { schema: { type: object, properties: { api_key: { $ref: '#/components/schemas/ApiKey' } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Tenant administration]
+      operationId: revokeTenantKeyForProductOwner
+      summary: Revoke a tenant API key
+      description: Product-owner platform key or product-owner login only. The last usable owner key cannot be revoked.
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Key revoked }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/tenants/{tenant_id}/api-keys/{id}/rotate:
+    post:
+      tags: [Tenant administration]
+      operationId: rotateTenantKeyForProductOwner
+      summary: Replace a tenant API key
+      description: Product-owner platform key or product-owner login only. The key role and expiration are retained; its replacement secret is returned once.
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Replacement key and one-time secret, content: { application/json: { schema: { type: object, properties: { api_key: { $ref: '#/components/schemas/ApiKey' }, secret: { type: string }, warning: { type: string } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/api-keys:
+    get:
+      tags: [Tenant administration]
+      operationId: listApiKeys
+      summary: List tenant API key metadata
+      description: Owner or admin role. Secret values are never returned by this operation.
+      responses:
+        '200': { description: API key metadata, content: { application/json: { schema: { type: object, properties: { api_keys: { type: array, items: { $ref: '#/components/schemas/ApiKey' } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Tenant administration]
+      operationId: createApiKey
+      summary: Create a tenant API key
+      description: Owner and admin may create keys; admins cannot grant owner or admin. Raw secret appears only in this response.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/NewApiKey' } } } }
+      responses:
+        '201': { description: Key created, raw secret shown once, content: { application/json: { schema: { type: object, properties: { api_key: { $ref: '#/components/schemas/ApiKey' }, secret: { type: string }, warning: { type: string } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/api-keys/{id}:
+    put:
+      tags: [Tenant administration]
+      operationId: updateApiKeyExpiration
+      summary: Set or clear a tenant API key expiration
+      description: Owner or admin role. Admins cannot change owner/admin keys. Send expires_at as an ISO 8601 timestamp; null clears expiration.
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateApiKey' } } } }
+      responses:
+        '200': { description: Updated key metadata, content: { application/json: { schema: { type: object, properties: { api_key: { $ref: '#/components/schemas/ApiKey' } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Tenant administration]
+      operationId: revokeApiKey
+      summary: Revoke a tenant API key
+      description: Owner or admin role. Admins cannot revoke owner/admin keys; the active key making this request cannot revoke itself.
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      responses:
+        '204': { description: Key revoked }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/api-keys/{id}/rotate:
+    post:
+      tags: [Tenant administration]
+      operationId: rotateApiKey
+      summary: Replace a tenant API key
+      description: Owner or admin role. Admins cannot rotate owner/admin keys. The old key is revoked atomically; its role and expiration are retained. The replacement secret is returned once.
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      responses:
+        '200': { description: Replacement key and one-time secret, content: { application/json: { schema: { type: object, properties: { api_key: { $ref: '#/components/schemas/ApiKey' }, secret: { type: string }, rotated_current_key: { type: boolean }, warning: { type: string } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API key
+      description: Tenant API key, or platform API_KEY for product-owner operations.
+    relayopsSession:
+      type: apiKey
+      in: cookie
+      name: relayops_session
+      description: HttpOnly browser session cookie set by login or first-time setup.
+  parameters:
+    UuidPath:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    BadRequest:
+      description: Invalid input
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Unauthorized:
+      description: Missing or invalid API key/session
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Forbidden:
+      description: Authenticated caller lacks the required role
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: Resource not found in this tenant
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  schemas:
+    Error:
+      type: object
+      properties: { error: { type: string } }
+      required: [error]
+    LoginInput:
+      type: object
+      required: [tenant_slug, email, password]
+      properties:
+        tenant_slug: { type: string, maxLength: 60, example: default }
+        email: { type: string, format: email }
+        password: { type: string, format: password, minLength: 1 }
+    RecoverLoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, format: password, minLength: 12, maxLength: 1024, description: New account password }
+    NewLoginAccount:
+      type: object
+      required: [email, display_name, password, role]
+      properties:
+        email: { type: string, format: email, maxLength: 320 }
+        display_name: { type: string, minLength: 1, maxLength: 120 }
+        password: { type: string, format: password, minLength: 12, maxLength: 1024 }
+        role: { type: string, enum: [owner, admin, responder, viewer] }
+    LoginAccount:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        display_name: { type: string }
+        role: { type: string, enum: [owner, admin, responder, viewer] }
+        active: { type: boolean }
+        is_product_owner: { type: boolean }
+        created_at: { type: string, format: date-time }
+    LoginResponse:
+      type: object
+      properties:
+        user: { $ref: '#/components/schemas/AuthenticatedLoginUser' }
+        tenant: { $ref: '#/components/schemas/Tenant' }
+        session_id: { type: string, format: uuid }
+        expires_in: { type: integer, example: 43200 }
+    AuthenticatedLoginUser:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        role: { type: string, enum: [owner, admin, responder, viewer] }
+        is_product_owner: { type: boolean }
+    Session:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        user_agent: { type: string }
+        current: { type: boolean }
+    AlertInput:
+      type: object
+      required: [dedup_key, title]
+      properties:
+        dedup_key: { type: string, minLength: 1, description: Stable key used for tenant-scoped alert grouping }
+        title: { type: string, minLength: 1 }
+        description: { type: string, default: '' }
+        severity: { type: string, enum: [critical, error, warning, info], default: warning }
+        source: { type: string, default: '' }
+        service: { type: string, default: '' }
+        labels: { description: Arbitrary JSON value }
+        metadata: { description: Arbitrary JSON value }
+        escalation_policy_id: { type: string, format: uuid, nullable: true }
+    Incident:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        incident_number: { type: string, example: RLY-00000042 }
+        dedup_key: { type: string }
+        title: { type: string }
+        description: { type: string }
+        severity: { type: string, enum: [critical, error, warning, info] }
+        status: { type: string, enum: [triggered, acknowledged, resolved] }
+        source: { type: string }
+        service: { type: string }
+        labels: { type: object, additionalProperties: true }
+        metadata: { type: object, additionalProperties: true }
+        assignee: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        acknowledged_at: { type: string, format: date-time, nullable: true }
+        resolved_at: { type: string, format: date-time, nullable: true }
+        escalation_policy_id: { type: string, format: uuid, nullable: true }
+    IncidentAction:
+      type: object
+      properties:
+        actor: { type: string, default: '' }
+        note: { type: string, default: '' }
+    IncidentEvent:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        kind: { type: string }
+        actor: { type: string }
+        note: { type: string }
+        created_at: { type: string, format: date-time }
+    CountPair:
+      type: array
+      minItems: 2
+      maxItems: 2
+      items: { oneOf: [{ type: string }, { type: integer, format: int64 }] }
+    EscalationStep:
+      type: object
+      required: [delay_minutes, target_type, target]
+      properties:
+        delay_minutes: { type: integer, minimum: 0, maximum: 10080 }
+        target_type: { type: string, enum: [user, team, schedule, channel] }
+        target: { type: string, minLength: 1, maxLength: 255 }
+    EscalationPolicyInput:
+      type: object
+      required: [name, timezone, steps]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, default: '' }
+        timezone: { type: string, example: America/New_York, description: IANA timezone name }
+        repeat_count: { type: integer, minimum: 0, maximum: 20, default: 0 }
+        repeat_every_minutes: { type: integer, minimum: 1, maximum: 10080, default: 30 }
+        steps: { type: array, minItems: 1, maxItems: 10, items: { $ref: '#/components/schemas/EscalationStep' } }
+    EscalationPolicy:
+      allOf:
+        - $ref: '#/components/schemas/EscalationPolicyInput'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+    OnCallScheduleInput:
+      type: object
+      required: [name, timezone, rotation_interval_minutes, rotation_starts_at, members]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        timezone: { type: string, example: America/New_York, description: IANA timezone used when displaying schedule times }
+        rotation_interval_minutes: { type: integer, minimum: 15, maximum: 43200, example: 480 }
+        rotation_starts_at: { type: string, format: date-time, description: Rotation anchor instant; ISO 8601 timestamp with timezone offset }
+        members: { type: array, minItems: 1, maxItems: 50, items: { type: string }, description: Ordered responder handles; each must have an active channel }
+    OnCallSchedule:
+      allOf:
+        - $ref: '#/components/schemas/OnCallScheduleInput'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+    RecipientInput:
+      type: object
+      required: [handle, channel, destination]
+      properties:
+        handle: { type: string, minLength: 1, maxLength: 120 }
+        channel: { type: string, enum: [email, webhook] }
+        destination: { type: string, maxLength: 2048, description: Valid email address or public HTTPS webhook URL }
+        team: { type: string, maxLength: 120, default: '' }
+        active: { type: boolean, default: true }
+    Recipient:
+      allOf:
+        - $ref: '#/components/schemas/RecipientInput'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+    NotificationUserInput:
+      type: object
+      properties:
+        handle: { type: string, minLength: 1, maxLength: 120, description: Required on create; path parameter supplies it on update }
+        team: { type: string, maxLength: 120 }
+        groups: { type: array, maxItems: 20, items: { type: string, minLength: 1, maxLength: 120 } }
+        email: { type: string, format: email, nullable: true }
+        webhook: { type: string, format: uri, nullable: true, description: HTTPS URL }
+        active: { type: boolean, default: true }
+        email_active: { type: boolean }
+        webhook_active: { type: boolean }
+    NotificationUserCreateInput:
+      allOf:
+        - $ref: '#/components/schemas/NotificationUserInput'
+        - type: object
+          required: [handle]
+          properties:
+            handle: { type: string, minLength: 1, maxLength: 120 }
+    NotificationUser:
+      type: object
+      properties:
+        handle: { type: string }
+        team: { type: string }
+        groups: { type: array, items: { type: string } }
+        channels: { type: object, additionalProperties: true }
+    Delivery:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        incident_id: { type: string, format: uuid }
+        channel: { type: string, enum: [email, webhook] }
+        destination: { type: string }
+        status: { type: string, enum: [pending, sending, delivered, dead, cancelled] }
+        attempts: { type: integer }
+        max_attempts: { type: integer }
+        next_attempt_at: { type: string, format: date-time }
+        delivered_at: { type: string, format: date-time, nullable: true }
+        last_error: { type: string }
+        created_at: { type: string, format: date-time }
+    IntegrationInput:
+      type: object
+      required: [connector_key, name]
+      properties:
+        connector_key: { type: string, description: Connector key from /v1/integration-catalog }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        enabled: { type: boolean, default: true }
+        configuration: { type: object, additionalProperties: true, description: Do not include credentials; payload_fields supports at most 50 field definitions }
+        credential_reference: { type: string, nullable: true, maxLength: 512, description: External secret manager reference }
+    ConnectorDefinition:
+      type: object
+      properties:
+        key: { type: string }
+        name: { type: string }
+        category: { type: string }
+        supported: { type: boolean, description: Whether a provider delivery adapter is available }
+        summary: { type: string }
+        fields: { type: array, items: { type: string } }
+    Integration:
+      allOf:
+        - $ref: '#/components/schemas/IntegrationInput'
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            tenant_id: { type: string, format: uuid }
+            validation_status: { type: string, enum: [not_validated, valid, invalid] }
+            last_validated_at: { type: string, format: date-time, nullable: true }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+    Tenant:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        created_at: { type: string, format: date-time }
+    NewTenant:
+      type: object
+      required: [name, slug]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        slug: { type: string, minLength: 2, maxLength: 60, pattern: '^[a-z0-9-]+$' }
+    NewApiKey:
+      type: object
+      required: [name, role]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        role: { type: string, enum: [owner, admin, responder, integration, viewer] }
+        expires_at: { type: string, format: date-time, nullable: true, description: Omit or set null for no expiration }
+    UpdateApiKey:
+      type: object
+      required: [expires_at]
+      properties:
+        expires_at: { type: string, format: date-time, nullable: true, description: Set to null to remove expiration }
+    ApiKey:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        role: { type: string }
+        active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time, nullable: true }
+        expires_at: { type: string, format: date-time, nullable: true }

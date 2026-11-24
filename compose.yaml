@@ -1,0 +1,56 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: relayops
+      POSTGRES_USER: relayops
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes: ["relayops-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relayops -d relayops"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  mailpit:
+    image: axllent/mailpit:latest
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: 5000
+    volumes: ["mailpit-data:/data"]
+    ports: ["127.0.0.1:${MAILPIT_WEB_PORT:-8026}:8025"]
+    restart: unless-stopped
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgres://relayops:${POSTGRES_PASSWORD}@db:5432/relayops
+      API_KEY: ${API_KEY:?set API_KEY in .env}
+      PRODUCT_OWNER_EMAIL: ${PRODUCT_OWNER_EMAIL:-owner@relayops.local}
+      PRODUCT_OWNER_PASSWORD: ${PRODUCT_OWNER_PASSWORD:-RelayOps-Owner-2026!}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      SMTP_URL: ${SMTP_URL:-smtp://mailpit:1025}
+      SMTP_FROM: ${SMTP_FROM:-RelayOps <alerts@example.test>}
+      WEBHOOK_SIGNING_SECRET: ${WEBHOOK_SIGNING_SECRET:-}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
+      RUST_LOG: info
+    ports: ["8080:8080"]
+    depends_on:
+      db: { condition: service_healthy }
+      mailpit: { condition: service_started }
+    restart: unless-stopped
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        RELAYOPS_API_URL: http://api:8080
+    environment:
+      RELAYOPS_API_URL: http://api:8080
+      NODE_ENV: production
+    ports: ["3000:3000"]
+    depends_on:
+      api: { condition: service_started }
+    restart: unless-stopped
+volumes:
+  relayops-data:
+  mailpit-data:
+
