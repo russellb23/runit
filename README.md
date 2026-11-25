@@ -1,6 +1,18 @@
 # RelayOps
 
-RelayOps is a self-hosted incident management application with a Next.js operator UI and a Rust API and authentication middleware. It accepts alerts from monitoring systems, groups repeated alerts by a stable deduplication key, and exposes incident acknowledgement, resolution, and event history. Each incident receives a globally unique, human-readable `RLY-########` number alongside its internal UUID; the number appears in the dashboard and notifications. Tenant data is isolated by tenant-scoped API keys and database filters. It is a deployable foundation rather than a feature-complete replacement.
+RelayOps is a self-hosted incident management application with a Next.js operator UI and a Rust API and authentication middleware. It accepts alerts from monitoring systems, groups repeated alerts by a stable deduplication key, and exposes incident acknowledgement, resolution, and event history. Each incident receives a globally unique, human-readable `RLY-########` number alongside its internal UUID; the number appears in the dashboard and notifications. Tenant data is isolated by tenant-scoped API keys and database filters. It is a deployable foundation rather than a feature-complete PagerDuty replacement.
+
+## Terminology
+
+RelayOps describes an incident as a **relay**: the message is carried from responder to responder along a route until someone resolves it. The operator UI uses this vocabulary; the API, database tables, and OpenAPI paths keep their original names so existing keys and automation continue to work.
+
+| UI term | API / database name |
+| --- | --- |
+| Relay | `incident` (`/v1/incidents`, `/v1/alerts` to create one) |
+| Relay route | `escalation_policy` (`/v1/escalation-policies`) |
+| Connection | `integration` (`/v1/integrations`, `/v1/integration-catalog`) |
+
+The navigation is grouped into five sections: Operations, Insights, People, Routing, and Administration. The relay list has a rows-per-page selector (10, 20, 50, 100, or 500) with previous/next paging; the choice is saved in browser preferences. The list still loads the latest 500 relays from the API and pages them in the browser.
 
 ## Included
 
@@ -225,7 +237,7 @@ spec:
   ports: [{ name: http, port: 80, targetPort: http }]
 ```
 
-## Roadmap
+## Roadmap for PagerDuty/AlertOps-class coverage
 
 This code is a starting point, not feature parity. The configuration center's broad connector catalog is not a set of provider adapters. The active delivery adapters are SMTP email and signed HTTPS webhooks. Before broad production use, add SSO/OIDC and user-account membership, per-integration key scoping (tenant roles are available, but keys are not yet bound to individual connectors), tenant-level quotas and audit administration, time-zone-aware on-call rotations, SMS/push/voice and chat/ticketing provider adapters, maintenance windows, suppression rules, alert grouping controls, rate limits, pagination/filtering, SLA analytics, audit export, server-side encrypted connector credential storage, retention controls, secret rotation, and load/security testing. PostgreSQL outbox is suitable for initial deployments; move to Kafka/SQS if sustained throughput requires it.
 

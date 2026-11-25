@@ -1,5 +1,5 @@
-use axum::{ middleware, routing::get, Router };
-use crate::{ authenticate, health, AppState };
+use axum::{middleware, routing::get, Router};
+use crate::{authenticate, health, AppState};
 
 mod analysis;
 mod auth;
@@ -25,9 +25,5 @@ pub(super) fn router(state: AppState) -> Router {
         .route_layer(middleware::from_fn_with_state(state.clone(), authenticate))
         .with_state(state.clone());
 
-    Router::new()
-        .route("/healthz", get(health))
-        .merge(auth::public_router().with_state(state.clone()))
-        .merge(docs::router().with_state(state.clone()))
-        .merge(api)
+    Router::new().route("/healthz", get(health)).merge(auth::public_router().with_state(state.clone())).merge(docs::router().with_state(state.clone())).merge(api)
 }

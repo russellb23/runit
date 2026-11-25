@@ -1,4 +1,4 @@
-use axum::{ http::header, response::{ Html, IntoResponse }, routing::get, Router };
+use axum::{http::header, response::{Html, IntoResponse}, routing::get, Router};
 use crate::AppState;
 
 pub(super) fn router() -> Router<AppState> {
@@ -13,8 +13,5 @@ async fn swagger_ui() -> Html<&'static str> {
 }
 
 async fn openapi_yaml() -> impl IntoResponse {
-    (
-        [(header::CONTENT_TYPE, "application/yaml; charset=utf-8")],
-        include_str!("../../docs/openapi.yaml"),
-    )
+    ([(header::CONTENT_TYPE, "application/yaml; charset=utf-8")], include_str!("../../docs/openapi.yaml"))
 }

@@ -1,13 +1,5 @@
-use axum::{ routing::{ get, post, put }, Router };
-use crate::{
-    create_integration,
-    delete_integration,
-    integration_catalog,
-    list_integrations,
-    update_integration,
-    validate_integration_record,
-    AppState,
-};
+use axum::{routing::{get, post, put}, Router};
+use crate::{create_integration, delete_integration, integration_catalog, list_integrations, update_integration, validate_integration_record, AppState};
 
 pub(super) fn router() -> Router<AppState> {
     Router::new()
