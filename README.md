@@ -1,6 +1,6 @@
 # RelayOps
 
-RelayOps is a self-hosted incident management application with a Next.js operator UI and a Rust API and authentication middleware. It accepts alerts from monitoring systems, groups repeated alerts by a stable deduplication key, and exposes incident acknowledgement, resolution, and event history. Each incident receives a globally unique, human-readable `RLY-########` number alongside its internal UUID; the number appears in the dashboard and notifications. Tenant data is isolated by tenant-scoped API keys and database filters. It is a deployable foundation rather than a feature-complete PagerDuty replacement.
+RelayOps is a self-hosted incident management application with a Next.js operator UI and a Rust API and authentication middleware. It accepts alerts from monitoring systems, groups repeated alerts by a stable deduplication key, and exposes incident acknowledgement, resolution, and event history. Each incident receives a globally unique, human-readable `RLY-########` number alongside its internal UUID; the number appears in the dashboard and notifications. Tenant data is isolated by tenant-scoped API keys and database filters. It is a deployable foundation rather than a feature-complete replacement of certain tools.
 
 ## Terminology
 
@@ -237,7 +237,7 @@ spec:
   ports: [{ name: http, port: 80, targetPort: http }]
 ```
 
-## Roadmap for PagerDuty/AlertOps-class coverage
+## Roadmap 
 
 This code is a starting point, not feature parity. The configuration center's broad connector catalog is not a set of provider adapters. The active delivery adapters are SMTP email and signed HTTPS webhooks. Before broad production use, add SSO/OIDC and user-account membership, per-integration key scoping (tenant roles are available, but keys are not yet bound to individual connectors), tenant-level quotas and audit administration, time-zone-aware on-call rotations, SMS/push/voice and chat/ticketing provider adapters, maintenance windows, suppression rules, alert grouping controls, rate limits, pagination/filtering, SLA analytics, audit export, server-side encrypted connector credential storage, retention controls, secret rotation, and load/security testing. PostgreSQL outbox is suitable for initial deployments; move to Kafka/SQS if sustained throughput requires it.
 
