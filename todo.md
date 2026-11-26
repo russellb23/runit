@@ -17,15 +17,15 @@ possible to complete a relay.
 - [ ] Only team leader should be able to assign to others without their permission.
 - [ ] Mistakenly assigned relays should have the feature to raise a spike to team 
     lead.
-- [ ] Default escalation policies upon creating users and groups.
+- [x] Default escalation policies upon creating users and groups.
 - [ ] Shift scheduling and planning (default, algorithmic)
 - [ ] Duplicate relay removal
 - [ ] Anomaly detection of relays
-- [ ] Escalation policies should be relay routes
+- [x] Escalation policies should be relay routes
 - [ ] Relay grouping (rule based and algorithm based-NLP)
 - [ ] Connectors (increase the number of available connectors and define formats)
 - [ ] Default and mandatory fields for an integration
-- [ ] Only in-bound connections for now
+- [x] Only in-bound connections for now
 - [x] Integrations should be named Connections
 - [x] Incident alerts should be incident relays.
 - [ ] Mean turn around time by user, team/group
@@ -37,3 +37,7 @@ possible to complete a relay.
     over-riding default/created relay routes under anomalous situations.
 - [ ] Reset API keys feature
 - [ ] Update escalation policy feature
+- [ ] Default relay routes should have edit and copy function so new routes can
+    be created using the default routes.
+- [ ] Default routes should only be created for Groups/Teams and not for each
+    user
