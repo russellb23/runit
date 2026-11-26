@@ -2,26 +2,6 @@
 
 RelayOps is a self-hosted incident management application with a Next.js operator UI and a Rust API and authentication middleware. It accepts alerts from monitoring systems, groups repeated alerts by a stable deduplication key, and exposes incident acknowledgement, resolution, and event history. Each incident receives a globally unique, human-readable `RLY-########` number alongside its internal UUID; the number appears in the dashboard and notifications. Tenant data is isolated by tenant-scoped API keys and database filters. It is a deployable foundation rather than a feature-complete  replacement.
 
-## Phase 2 behaviour
-
-- **Users & channels:** admins can add, edit, pause, resume, and permanently remove responders. Channels are e-mail, mobile, phone, WhatsApp, Slack, Discord, and signed webhook. E-mail, Slack, Discord, and webhook are delivered; mobile, phone, and WhatsApp are validated (`+` and 7–15 digits) and stored only. Slack and Discord destinations must be those providers' own webhook URLs.
-- **Default relay routes:** creating a responder creates `Default · <handle>` (notify that responder immediately). Creating a responder with a group that did not exist before creates `Default · <group>` (notify the team). Existing routes are never overwritten, and deleting a default route is not undone by later edits.
-- **Relay routes:** each route can be deleted from the Relay routes screen.
-- **On-call schedules:** members are chosen from registered responders and ordered with move/remove controls. A schedule can have a team; responders who belong only to other teams cannot join it. Members need an active deliverable channel.
-
-## UI rules
-
-Every UI element must do something. No decorative buttons, dead links, headings, badges, or controls that look interactive but are not. When adding a screen, each control needs working behaviour (an action, a toggle, a navigation, or a tooltip-backed state), and role-gated controls are disabled with an explanation rather than left inert. Purely informational text is fine, but anything styled as a button, tag, tab, or pill must be clickable.
-
-## Phase 3 behaviour
-
-- **Resolution is mandatory.** A relay cannot be resolved without a resolution note. The UI opens a dialog that requires one, and the API rejects `resolve` calls with a missing or too-short `note` (400). Existing automation that resolves relays must now send a note.
-- **Assignment.** Anyone with the owner, admin, or responder role can assign a relay from the Relay desk (detail panel or right-click menu). Assigning to yourself, or to a member of a team you lead, takes effect immediately. Assigning to anyone else sends a request that appears under "Needs your attention" for the assignee, who accepts or declines it. Only a team lead can assign without the assignee's permission.
-- **Team leads.** Set one lead per team or group under Users & channels > Team leads. The lead must be an active member of that team.
-- **Who is "you".** A login is matched to a responder by e-mail address (an e-mail channel with the same address) or, failing that, by a handle equal to the account's display name. A login that matches no responder can still act on relays, but it can only send assignment requests and cannot raise or answer spikes. The UI says so when this applies.
-- **Spikes.** The current assignee of a relay can raise a spike ("this is not mine") with a reason. It goes to the team lead of the assignee's team, who either reassigns the relay or keeps it with the assignee. The tenant owner can also answer a spike so it can never be stranded. A spike needs a team lead to exist; otherwise the UI explains that one must be set.
-- **Demo flow.** Replaces the old test flow. See step 7 above. Demo relays have `source=demo`, no relay route, and are never queued for delivery.
-
 ## Terminology
 
 RelayOps describes an incident as a **relay**: the message is carried from responder to responder along a route until someone resolves it. The operator UI uses this vocabulary; the API, database tables, and OpenAPI paths keep their original names so existing keys and automation continue to work.
