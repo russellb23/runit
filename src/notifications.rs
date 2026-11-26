@@ -146,9 +146,16 @@ async fn process_due_escalations(db: &PgPool) -> Result<(), sqlx::Error> {
             _ => sqlx::query_as::<_, Recipient>("SELECT id,handle,channel,destination FROM notification_recipients WHERE tenant_id=$1 AND active AND (handle=$2 OR destination=$2) ORDER BY handle,channel")
                 .bind(run.tenant_id).bind(&step.target).fetch_all(&mut *tx).await?,
         };
+        let contact_only = recipients.iter().filter(|r| !is_deliverable_channel(&r.channel)).count();
+        let recipients: Vec<Recipient> = recipients.into_iter().filter(|r| is_deliverable_channel(&r.channel)).collect();
         if recipients.is_empty() {
+            let reason = if contact_only > 0 {
+                format!("no deliverable notification targets for {} (phone, mobile and WhatsApp contacts are stored only)", step.target)
+            } else {
+                format!("no active notification targets for {}", step.target)
+            };
             sqlx::query("UPDATE incident_escalations SET next_run_at=now()+interval '1 minute',last_error=$2,updated_at=now() WHERE id=$1")
-                .bind(run.id).bind(format!("no active notification targets for {}", step.target)).execute(&mut *tx).await?;
+                .bind(run.id).bind(reason).execute(&mut *tx).await?;
             tracing::warn!(incident_id=%run.incident_id, target=%step.target, "escalation has no active recipients; retrying target lookup in one minute");
             continue;
         }
@@ -233,6 +240,8 @@ async fn deliver_one(client: &reqwest::Client, job: &Job) -> Result<(), String> 
     match job.channel.as_str() {
         "email" => send_email(job).await,
         "webhook" => send_webhook(client, job).await,
+        "slack" => send_chat_webhook(client, job, "slack").await,
+        "discord" => send_chat_webhook(client, job, "discord").await,
         other => Err(format!("unsupported notification channel: {other}")),
     }
 }
@@ -254,22 +263,20 @@ async fn send_email(job: &Job) -> Result<(), String> {
     sender.send(message).await.map(|_|()).map_err(|e|format!("SMTP delivery failed: {e}"))
 }
 
-async fn send_webhook(client: &reqwest::Client, job: &Job) -> Result<(), String> {
-    let secret=env::var("WEBHOOK_SIGNING_SECRET").map_err(|_| "WEBHOOK_SIGNING_SECRET is not configured".to_string())?;
-    if secret.len()<32 { return Err("WEBHOOK_SIGNING_SECRET must be at least 32 characters".into()); }
-    let url=reqwest::Url::parse(&job.destination).map_err(|e|format!("invalid webhook URL: {e}"))?;
-    if url.scheme()!="https" { return Err("webhook URL must use HTTPS".into()); }
-    let Some(host)=url.host_str() else { return Err("webhook URL has no host".into()) };
+/// Builds an HTTP client for `url` after checking that the host resolves only to public addresses,
+/// and pins the connection to the validated address so a second DNS lookup cannot redirect it.
+async fn pinned_public_client(client:&reqwest::Client,url:&reqwest::Url)->Result<reqwest::Client,String>{
+    let Some(host)=url.host_str() else { return Err("destination URL has no host".into()) };
     {
         if host.eq_ignore_ascii_case("localhost") || host.ends_with(".localhost") || host.ends_with(".local") {
-            return Err("local webhook destinations are blocked".into());
+            return Err("local destinations are blocked".into());
         }
     }
     let port=url.port_or_known_default().unwrap_or(443);
     let resolved:Vec<SocketAddr>=tokio::net::lookup_host((host,port)).await
-        .map_err(|e|format!("webhook host lookup failed: {e}"))?.collect();
+        .map_err(|e|format!("destination host lookup failed: {e}"))?.collect();
     if resolved.is_empty() || resolved.iter().any(|addr|!is_public_address(addr.ip())) {
-        return Err("webhook host must resolve only to public IP addresses".into());
+        return Err("destination host must resolve only to public IP addresses".into());
     }
     // Pin this request to the validated address to prevent a second DNS lookup from
     // resolving the configured host to a private address.
@@ -277,8 +284,17 @@ async fn send_webhook(client: &reqwest::Client, job: &Job) -> Result<(), String>
     let client=if host.parse::<IpAddr>().is_err() {
         reqwest::Client::builder().timeout(Duration::from_secs(15))
             .redirect(reqwest::redirect::Policy::none()).resolve(host,pinned).build()
-            .map_err(|e|format!("could not create webhook client: {e}"))?
+            .map_err(|e|format!("could not create HTTP client: {e}"))?
     } else { client.clone() };
+    Ok(client)
+}
+
+async fn send_webhook(client: &reqwest::Client, job: &Job) -> Result<(), String> {
+    let secret=env::var("WEBHOOK_SIGNING_SECRET").map_err(|_| "WEBHOOK_SIGNING_SECRET is not configured".to_string())?;
+    if secret.len()<32 { return Err("WEBHOOK_SIGNING_SECRET must be at least 32 characters".into()); }
+    let url=reqwest::Url::parse(&job.destination).map_err(|e|format!("invalid webhook URL: {e}"))?;
+    if url.scheme()!="https" { return Err("webhook URL must use HTTPS".into()); }
+    let client=pinned_public_client(client,&url).await?;
     let body=serde_json::to_vec(&job.payload).map_err(|e|e.to_string())?;
     let timestamp=Utc::now().timestamp().to_string();
     let mut mac=HmacSha256::new_from_slice(secret.as_bytes()).map_err(|e|e.to_string())?;
@@ -305,3 +321,64 @@ fn is_public_address(ip:IpAddr)->bool {
     }
 }
 
+
+pub fn is_deliverable_channel(channel: &str) -> bool {
+    matches!(channel, "email" | "webhook" | "slack" | "discord")
+}
+
+/// Slack and Discord destinations must be the providers' own incoming-webhook URLs.
+pub fn validate_chat_webhook(channel: &str, destination: &str) -> Result<(), String> {
+    let url = reqwest::Url::parse(destination).map_err(|_| format!("{channel} destination must be a valid webhook URL"))?;
+    if url.scheme() != "https" {
+        return Err(format!("{channel} webhook URL must use HTTPS"));
+    }
+    let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
+    let path = url.path();
+    let valid = match channel {
+        "slack" => host == "hooks.slack.com" && path.starts_with("/services/") && path.len() > "/services/".len(),
+        "discord" => {
+            ["discord.com", "canary.discord.com", "ptb.discord.com", "discordapp.com"].contains(&host.as_str())
+                && path.starts_with("/api/webhooks/")
+                && path.len() > "/api/webhooks/".len()
+        }
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else if channel == "slack" {
+        Err("Slack destination must be an incoming webhook URL such as https://hooks.slack.com/services/T000/B000/XXXX".to_string())
+    } else {
+        Err("Discord destination must be a webhook URL such as https://discord.com/api/webhooks/ID/TOKEN".to_string())
+    }
+}
+
+fn chat_message(job: &Job) -> String {
+    let text = job.payload.get("text").and_then(Value::as_str).unwrap_or("RelayOps relay notification");
+    let route = job.payload.pointer("/policy/name").and_then(Value::as_str).unwrap_or_default();
+    let description = job.payload.pointer("/incident/description").and_then(Value::as_str).unwrap_or_default();
+    let mut message = format!("🚨 {text}");
+    if !route.is_empty() {
+        message.push_str(&format!("\nRelay route: {route}"));
+    }
+    if !description.trim().is_empty() {
+        message.push_str(&format!("\n{}", description.chars().take(1200).collect::<String>()));
+    }
+    message.chars().take(1800).collect()
+}
+
+async fn send_chat_webhook(client: &reqwest::Client, job: &Job, channel: &str) -> Result<(), String> {
+    validate_chat_webhook(channel, &job.destination)?;
+    let url = reqwest::Url::parse(&job.destination).map_err(|e| format!("invalid {channel} webhook URL: {e}"))?;
+    let client = pinned_public_client(client, &url).await?;
+    let text = chat_message(job);
+    let body = if channel == "slack" {
+        json!({ "text": text })
+    } else {
+        json!({ "content": text, "allowed_mentions": { "parse": [] } })
+    };
+    let response = client.post(url).json(&body).send().await.map_err(|e| format!("{channel} request failed: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!("{channel} returned HTTP {}", response.status()));
+    }
+    Ok(())
+}

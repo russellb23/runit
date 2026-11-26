@@ -37,3 +37,57 @@ select option:checked{background-color:#1c2d43;color:#ffffff}
 .rows-per-page{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--muted)}
 .rows-per-page select{width:auto;min-height:30px;padding:5px 8px}
 .page-indicator{min-width:48px;text-align:center;font-size:11px;color:var(--text)}
+
+/* --- Phase 2: collapsible nav groups (now buttons) --- */
+button.navgroup{display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%;background:transparent;border:0;border-radius:6px;cursor:pointer;font-family:inherit;text-align:left}
+button.navgroup:hover,button.navgroup:focus-visible{color:#c9d8ee;background:#101b2b}
+button.navgroup i{font-style:normal;font-size:10px}
+.navgroup-items{display:contents}
+.navgroup-items[hidden]{display:none}
+.nav-collapsed button.navgroup{justify-content:center}
+.nav-top button.navgroup,.nav-bottom button.navgroup{width:auto}
+
+/* --- header brand + connection pill are interactive --- */
+.brand-link{cursor:pointer}
+.brand-link:focus-visible{outline:2px solid #4c8dff;outline-offset:3px;border-radius:8px}
+button.conn{background:transparent;border:1px solid var(--line);border-radius:20px;padding:5px 10px;color:inherit;font:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+button.conn:hover{border-color:#4c8dff}
+
+/* --- Users & channels --- */
+.channel-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.channel-tags .integration-tag{max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.integration-tag.paused-tag{color:#e0b36a;border-color:#6b5530}
+.accessrow strong .integration-tag{margin-left:8px;vertical-align:middle}
+.user-modal{max-height:92vh;overflow:auto}
+.channel-grid{display:grid;gap:8px}
+.channel-grid>span{font-size:11px;color:var(--muted)}
+.channel-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end}
+.channel-input{display:grid;gap:4px;font-size:11px;color:var(--muted)}
+.channel-input em{font-style:normal;font-size:9px;margin-left:8px;padding:1px 6px;border-radius:10px;border:1px solid #354860}
+.channel-input em.deliver{color:#7fd6a5;border-color:#2f6b4f}
+.channel-input em.contact{color:#e0b36a;border-color:#6b5530}
+.channel-active{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text);padding-bottom:9px;white-space:nowrap}
+input[readonly]{opacity:.7;cursor:not-allowed}
+
+/* --- schedule member picker --- */
+.member-order{list-style:none;margin:6px 0;padding:0;display:grid;gap:6px}
+.member-order li{display:flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:#0c1420}
+.member-handle{flex:1;font-size:12px;color:var(--text)}
+.member-picker{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.member-choice[disabled]{opacity:.45;cursor:not-allowed}
+@media (max-width:640px){.channel-row{grid-template-columns:1fr}.channel-active{padding-bottom:0}}
+
+/* --- Phase 3: assignment, spikes, team leads, demo --- */
+.attention{border:1px solid #6b5530;background:#1a1610;border-radius:10px;padding:12px 14px;margin:0 0 14px}
+.attention h3{margin:0 0 8px;font-size:12px;letter-spacing:.6px;text-transform:uppercase;color:#e0b36a}
+.attention-row{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:12px;color:var(--text);border-top:1px solid #2c2618}
+.attention-row:first-of-type{border-top:0}
+.attention-row>span{flex:1}
+button.linklike{background:none;border:0;padding:0;color:#7fb2ff;font:inherit;cursor:pointer;text-decoration:underline}
+.team-leads{margin-top:22px;border-top:1px solid var(--line);padding-top:16px}
+.team-leads h3{margin:0 0 4px}
+.team-leads p{color:var(--muted);font-size:12px;margin:0 0 10px}
+.lead-row{display:grid;grid-template-columns:minmax(120px,1fr) minmax(160px,220px) auto;gap:10px;align-items:center;padding:6px 0}
+.hint{font-size:11px;color:var(--muted);padding:8px 10px;border:1px solid var(--line);border-radius:8px;grid-column:1/-1}
+.hint.ok{color:#7fd6a5;border-color:#2f6b4f}
+.demo-note{margin:10px 0;padding:9px 11px;border:1px dashed #4c8dff;border-radius:8px;font-size:11px;color:#9eb9dc}

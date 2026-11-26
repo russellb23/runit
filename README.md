@@ -1,6 +1,26 @@
 # RelayOps
 
-RelayOps is a self-hosted incident management application with a Next.js operator UI and a Rust API and authentication middleware. It accepts alerts from monitoring systems, groups repeated alerts by a stable deduplication key, and exposes incident acknowledgement, resolution, and event history. Each incident receives a globally unique, human-readable `RLY-########` number alongside its internal UUID; the number appears in the dashboard and notifications. Tenant data is isolated by tenant-scoped API keys and database filters. It is a deployable foundation rather than a feature-complete replacement of certain tools.
+RelayOps is a self-hosted incident management application with a Next.js operator UI and a Rust API and authentication middleware. It accepts alerts from monitoring systems, groups repeated alerts by a stable deduplication key, and exposes incident acknowledgement, resolution, and event history. Each incident receives a globally unique, human-readable `RLY-########` number alongside its internal UUID; the number appears in the dashboard and notifications. Tenant data is isolated by tenant-scoped API keys and database filters. It is a deployable foundation rather than a feature-complete  replacement.
+
+## Phase 2 behaviour
+
+- **Users & channels:** admins can add, edit, pause, resume, and permanently remove responders. Channels are e-mail, mobile, phone, WhatsApp, Slack, Discord, and signed webhook. E-mail, Slack, Discord, and webhook are delivered; mobile, phone, and WhatsApp are validated (`+` and 7–15 digits) and stored only. Slack and Discord destinations must be those providers' own webhook URLs.
+- **Default relay routes:** creating a responder creates `Default · <handle>` (notify that responder immediately). Creating a responder with a group that did not exist before creates `Default · <group>` (notify the team). Existing routes are never overwritten, and deleting a default route is not undone by later edits.
+- **Relay routes:** each route can be deleted from the Relay routes screen.
+- **On-call schedules:** members are chosen from registered responders and ordered with move/remove controls. A schedule can have a team; responders who belong only to other teams cannot join it. Members need an active deliverable channel.
+
+## UI rules
+
+Every UI element must do something. No decorative buttons, dead links, headings, badges, or controls that look interactive but are not. When adding a screen, each control needs working behaviour (an action, a toggle, a navigation, or a tooltip-backed state), and role-gated controls are disabled with an explanation rather than left inert. Purely informational text is fine, but anything styled as a button, tag, tab, or pill must be clickable.
+
+## Phase 3 behaviour
+
+- **Resolution is mandatory.** A relay cannot be resolved without a resolution note. The UI opens a dialog that requires one, and the API rejects `resolve` calls with a missing or too-short `note` (400). Existing automation that resolves relays must now send a note.
+- **Assignment.** Anyone with the owner, admin, or responder role can assign a relay from the Relay desk (detail panel or right-click menu). Assigning to yourself, or to a member of a team you lead, takes effect immediately. Assigning to anyone else sends a request that appears under "Needs your attention" for the assignee, who accepts or declines it. Only a team lead can assign without the assignee's permission.
+- **Team leads.** Set one lead per team or group under Users & channels > Team leads. The lead must be an active member of that team.
+- **Who is "you".** A login is matched to a responder by e-mail address (an e-mail channel with the same address) or, failing that, by a handle equal to the account's display name. A login that matches no responder can still act on relays, but it can only send assignment requests and cannot raise or answer spikes. The UI says so when this applies.
+- **Spikes.** The current assignee of a relay can raise a spike ("this is not mine") with a reason. It goes to the team lead of the assignee's team, who either reassigns the relay or keeps it with the assignee. The tenant owner can also answer a spike so it can never be stranded. A spike needs a team lead to exist; otherwise the UI explains that one must be set.
+- **Demo flow.** Replaces the old test flow. See step 7 above. Demo relays have `source=demo`, no relay route, and are never queued for delivery.
 
 ## Terminology
 
@@ -34,7 +54,7 @@ The navigation is grouped into five sections: Operations, Insights, People, Rout
 3. Open `http://localhost:3000/` for the Next.js operator UI. API health is at `http://localhost:8080/healthz`; interactive API documentation is at `http://localhost:8080/docs` and the OpenAPI contract is at `http://localhost:8080/openapi.yaml`.
 4. On first startup, RelayOps seeds a product-owner login for tenant slug `default`. Sign in with `PRODUCT_OWNER_EMAIL` and `PRODUCT_OWNER_PASSWORD` from `.env` (defaults: `owner@relayops.local` / `RelayOps-Owner-2026!`). The product owner can create tenants and issue their initial keys. Use **First-time setup** with a tenant owner key to create the first login for an additional tenant. Existing API keys continue to work for automation.
 
-The Next.js dashboard supports incident search and filters, acknowledgement and resolution, manual incident creation, an end-to-end test flow, user and channel setup, escalation policy configuration, delivery inspection, tenant management, login accounts, session revocation, and API key administration including rotation, revocation, and expiration controls. The shared header search works across screens and matches partial incident keys, internal IDs, and titles. Right-click an incident for quick response actions; product owners can right-click a tenant to manage that tenant's keys. The Account & sessions navigation entry is hidden for product owners. The navigation bar can be placed on the left, right, top, or bottom; change this under **Settings** and the choice is saved in browser preferences. Browser sessions use HttpOnly cookies; API keys continue to authenticate monitoring integrations.
+The Next.js dashboard supports incident search and filters, acknowledgement and resolution, manual incident creation, a demo flow, user and channel setup, escalation policy configuration, delivery inspection, tenant management, login accounts, session revocation, and API key administration including rotation, revocation, and expiration controls. The shared header search works across screens and matches partial incident keys, internal IDs, and titles. Right-click an incident for quick response actions; product owners can right-click a tenant to manage that tenant's keys. The Account & sessions navigation entry is hidden for product owners. The navigation bar can be placed on the left, right, top, or bottom; change this under **Settings** and the choice is saved in browser preferences. Browser sessions use HttpOnly cookies; API keys continue to authenticate monitoring integrations.
 
 ### Login and browser sessions
 
@@ -42,17 +62,17 @@ On first startup, the API creates the configured product-owner account in the `d
 
 The **Tenants** navigation option is visible only to owner-level accounts. Tenant owners see their own tenant; the product-owner login or platform API key can list and create tenants across the platform.
 
-Escalation policies, on-call rotations, and responder channels are stored in PostgreSQL and are available through the Rust API. A PostgreSQL-backed worker evaluates due steps, queues email and signed webhook notifications in a durable outbox, retries failures with exponential delay, and stops a run when the incident is acknowledged or resolved. A schedule escalation step notifies every active channel for the one responder currently on rotation; team steps notify all active matching members.
+Escalation policies, on-call rotations, and responder channels are stored in PostgreSQL and are available through the Rust API. A PostgreSQL-backed worker evaluates due steps, queues e-mail, signed webhook, Slack, and Discord notifications in a durable outbox, retries failures with exponential delay, and stops a run when the incident is acknowledged or resolved. A schedule escalation step notifies every active channel for the one responder currently on rotation; team steps notify all active matching members.
 
 ### Configure and run escalations
 
 1. The default `.env.example` sends mail to the bundled local Mailpit service at `smtp://mailpit:1025`. Copy it to `.env`; messages are captured for testing and do not go to real recipients. Open `http://localhost:8026` to inspect them. The host port is controlled by `MAILPIT_WEB_PORT` (default `8026`); change it if that port is also occupied. The Mailpit inbox is persisted in the `mailpit-data` volume. For real delivery, replace `SMTP_URL` and `SMTP_FROM` with your mail provider settings and secure those values as deployment secrets. Set a random `WEBHOOK_SIGNING_SECRET` of at least 32 characters. Webhook targets require HTTPS.
 2. Start or rebuild with `docker compose up --build -d`. Startup applies the database migration, starts the queue worker, and launches Mailpit.
-3. Configure responder channels through the `/v1/notification-users` API. Contacts are stored in PostgreSQL. Keep SMTP and webhook signing credentials in deployment secrets.
+3. Configure responder channels through the `/v1/notification-users` API. Contacts are stored in PostgreSQL. Responders can have e-mail, signed webhook, Slack (incoming webhook), Discord (webhook), and stored mobile, phone, and WhatsApp contacts; the stored contacts are never sent to. Keep SMTP and webhook signing credentials in deployment secrets. Slack and Discord webhook URLs are secrets too.
 4. Create on-call rotations from **On-call schedules**. Choose an IANA timezone, anchor date/time, interval, and ordered responder handles. The timezone is used when displaying schedule times; the interval rotates from the saved UTC anchor. Every member must have an active channel.
 5. Create escalation policies through `/v1/escalation-policies`. A `user` target matches a responder handle; `team` matches a team or group and notifies all active members; `schedule` targets an on-call schedule by name and notifies the current rotation member; `channel` targets a responder destination. Use the policy timezone to label the policy; step delays are elapsed minutes.
 6. When creating an alert, choose its escalation policy. API integrations can instead send `"escalation_policy_id":"<policy UUID>"` in `POST /v1/alerts`.
-7. To exercise the full information path manually, select **Run test flow**, fill in the fields, choose a policy, and submit. It creates a clearly labeled incident with a unique test deduplication key and starts the real escalation worker. The selected policy can send actual email and signed webhook messages to matching recipients, so use test destinations first.
+7. To rehearse the whole relay lifecycle, select **Demo flow**, pick a severity, optionally pick a relay route to preview, and start it. This creates a relay marked DEMO that is never escalated, queued, or sent anywhere, so it is safe to run against production. Its timeline lists who the chosen route would have notified, and you can acknowledge, assign, raise a spike on, and resolve it like a real relay.
 
 ### Incident analysis
 
@@ -109,7 +129,7 @@ curl -X POST -H 'Authorization: Bearer <API_KEY>' -H 'Content-Type: application/
   -d '{"actor":"oncall@example.com","note":"Investigating"}' \
   http://localhost:8080/v1/incidents/<UUID>/acknowledge
 curl -X POST -H 'Authorization: Bearer <API_KEY>' -H 'Content-Type: application/json' \
-  -d '{"actor":"oncall@example.com","note":"Mitigated"}' \
+  -d '{"actor":"oncall@example.com","note":"Restarted the worker; queue drained"}' \
   http://localhost:8080/v1/incidents/<UUID>/resolve
 curl -H 'Authorization: Bearer <API_KEY>' http://localhost:8080/v1/incidents/<UUID>/events
 ```
@@ -128,7 +148,14 @@ The full API contract is published as OpenAPI 3 at `/openapi.yaml`; browse and t
 | GET | `/v1/analytics/incidents` | Read tenant incident totals by source and assignee |
 | GET | `/v1/incidents/{uuid}` | Fetch one incident |
 | POST | `/v1/incidents/{uuid}/acknowledge` | Acknowledge and optionally assign |
-| POST | `/v1/incidents/{uuid}/resolve` | Resolve an incident |
+| POST | `/v1/incidents/{uuid}/resolve` | Resolve an incident; a resolution `note` (3–2000 characters) is required |
+| POST | `/v1/incidents/{uuid}/assign` | Assign a relay (immediate for yourself or your team's lead, otherwise a request the assignee must accept) |
+| POST | `/v1/incidents/{uuid}/spike` | Flag a mistaken assignment to the assignee's team lead |
+| GET | `/v1/assignment-requests` | Pending assignment requests; `POST /v1/assignment-requests/{uuid}/accept` or `/decline` answers one |
+| GET | `/v1/spikes` | Open spikes; `POST /v1/spikes/{uuid}/resolve` reassigns or dismisses one |
+| GET / PUT / DELETE | `/v1/team-leads`, `/v1/team-leads/{team}` | List, set, or clear the lead of a team or group |
+| GET | `/v1/responders`, `/v1/me/responder` | Assignable responders (no contact details); the responder the current login maps to |
+| POST | `/v1/demo/relay` | Create a rehearsal relay that sends nothing |
 | GET | `/v1/incidents/{uuid}/events` | Read its audit events |
 | GET | `/v1/escalation-policies` | List escalation policies from PostgreSQL |
 | POST | `/v1/escalation-policies` | Create an escalation policy |
@@ -139,13 +166,13 @@ The full API contract is published as OpenAPI 3 at `/openapi.yaml`; browse and t
 | PUT | `/v1/schedules/{uuid}` | Replace schedule rotation and member order |
 | DELETE | `/v1/schedules/{uuid}` | Delete an on-call schedule |
 | GET | `/v1/notification-recipients` | List delivery targets |
-| POST | `/v1/notification-recipients` | Create an email or webhook target |
+| POST | `/v1/notification-recipients` | Create a single-channel target (email, webhook, slack, discord, phone, mobile, or whatsapp) |
 | PUT | `/v1/notification-recipients/{uuid}` | Update a target |
 | DELETE | `/v1/notification-recipients/{uuid}` | Deactivate a target |
 | GET | `/v1/notification-users` | List responder users and configured channels |
 | POST | `/v1/notification-users` | Create a responder and configure channels |
 | PUT | `/v1/notification-users/{handle}` | Update a responder's team, group memberships, and channels |
-| DELETE | `/v1/notification-users/{handle}` | Pause all of a responder's channels |
+| DELETE | `/v1/notification-users/{handle}` | Pause all of a responder's channels; add `?permanent=true` to remove the responder (409 while a schedule or relay route still uses them) |
 | POST | `/v1/auth/login` | Create a tenant browser session from tenant slug, email, and password |
 | POST | `/v1/auth/setup` | Create the tenant's first owner login using an owner API key |
 | POST | `/v1/auth/recover` | Reset an account password with a tenant owner API key and revoke its sessions |
@@ -237,7 +264,7 @@ spec:
   ports: [{ name: http, port: 80, targetPort: http }]
 ```
 
-## Roadmap 
+## Roadmap
 
 This code is a starting point, not feature parity. The configuration center's broad connector catalog is not a set of provider adapters. The active delivery adapters are SMTP email and signed HTTPS webhooks. Before broad production use, add SSO/OIDC and user-account membership, per-integration key scoping (tenant roles are available, but keys are not yet bound to individual connectors), tenant-level quotas and audit administration, time-zone-aware on-call rotations, SMS/push/voice and chat/ticketing provider adapters, maintenance windows, suppression rules, alert grouping controls, rate limits, pagination/filtering, SLA analytics, audit export, server-side encrypted connector credential storage, retention controls, secret rotation, and load/security testing. PostgreSQL outbox is suitable for initial deployments; move to Kafka/SQS if sustained throughput requires it.
 

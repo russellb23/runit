@@ -10,6 +10,7 @@ mod integrations;
 mod notifications;
 mod schedules;
 mod tenants;
+mod workflow;
 
 /// Compose feature routers into the single authenticated API process.
 pub(super) fn router(state: AppState) -> Router {
@@ -22,6 +23,7 @@ pub(super) fn router(state: AppState) -> Router {
         .merge(notifications::router())
         .merge(schedules::router())
         .merge(tenants::router())
+        .merge(workflow::router())
         .route_layer(middleware::from_fn_with_state(state.clone(), authenticate))
         .with_state(state.clone());
 

@@ -30,7 +30,7 @@ Append-style event history: `id bigserial`, `incident_id`, `kind`, `actor`, `not
 
 ### `notification_recipients`
 
-One channel destination per `(tenant_id,handle,channel)`: `id`, `tenant_id`, `handle`, `channel`, `destination`, `team`, `groups text[]`, `active`, `created_at`, `updated_at`. Channels currently supported by the worker are `email` and `webhook`. Group membership is indexed with a GIN index. Schedules reference the stable `handle`, not a specific channel row.
+One channel destination per `(tenant_id,handle,channel)`: `id`, `tenant_id`, `handle`, `channel`, `destination`, `team`, `groups text[]`, `active`, `created_at`, `updated_at`. Channels are `email`, `webhook`, `slack`, `discord`, `phone`, `mobile`, and `whatsapp`. The worker delivers `email`, `webhook`, `slack` (incoming-webhook URL), and `discord` (webhook URL); `phone`, `mobile`, and `whatsapp` are stored contact details only and are never queued. Phone-style destinations are normalised to `+<digits>`. Group membership is indexed with a GIN index. Schedules reference the stable `handle`, not a specific channel row.
 
 ### `incident_escalations`
 
@@ -38,7 +38,7 @@ Durable escalation run state: `id`, `tenant_id`, unique `incident_id`, `policy_i
 
 ### `notification_outbox`
 
-Durable delivery jobs: `id`, `escalation_run_id`, `tenant_id`, `incident_id`, `cycle`, `step_index`, `recipient_id`, `channel`, `destination`, JSONB `payload`, `status` (`pending`, `sending`, `delivered`, `dead`, `cancelled`), `attempts`, `max_attempts`, `next_attempt_at`, nullable `locked_at` and `delivered_at`, `last_error`, and `created_at`. `(escalation_run_id,cycle,step_index,recipient_id)` is unique to avoid duplicate queue rows for one escalation step.
+Durable delivery jobs: `id`, `escalation_run_id`, `tenant_id`, `incident_id`, `cycle`, `step_index`, `recipient_id`, `channel`, `destination`, JSONB `payload`, `status` (`pending`, `sending`, `delivered`, `dead`, `cancelled`), `attempts`, `max_attempts`, `next_attempt_at`, nullable `locked_at` and `delivered_at`, `last_error`, and `created_at`. `(escalation_run_id,cycle,step_index,recipient_id)` is unique to avoid duplicate queue rows for one escalation step. `recipient_id` is nullable and `ON DELETE SET NULL`, so permanently removing a responder keeps their delivery history (channel and destination are stored on the job). Outbox channels are limited to `email`, `webhook`, `slack`, and `discord`.
 
 ### `tenant_integrations`
 
@@ -48,9 +48,13 @@ Connector configuration: `id`, `tenant_id`, `connector_key`, `name`, `enabled`, 
 
 `tenant_users` stores `id`, `tenant_id`, lower-case-unique-per-tenant `email`, `display_name`, Argon2id `password_hash`, role (`owner`, `admin`, `responder`, `viewer`), `is_product_owner`, `active`, failed login count, lock expiry, and timestamps. Startup creates the configured product-owner account in the default tenant. On the first promotion of a regular account matching `PRODUCT_OWNER_EMAIL`, it applies `PRODUCT_OWNER_PASSWORD` once and clears its failed-login lock; later restarts preserve password changes. `user_sessions` stores the tenant/user IDs, unique SHA-256 `token_hash`, created/last-seen/expiry/revocation times, and user-agent text. Raw session tokens exist only in the HttpOnly cookie. Session expiry is 12 hours.
 
+### `notification_team_leads`, `incident_assignment_requests`, and `incident_spikes`
+
+`notification_team_leads` holds at most one lead per `(tenant_id,team)`; `handle` is a responder handle and the lead must be an active member of that team or group. `incident_assignment_requests` records a request from someone who is not the assignee's team lead (`requested_by`, `assignee`, `note`, `status` of `pending`, `accepted`, or `declined`); one pending request is allowed per `(incident_id,assignee)`. `incident_spikes` records a mistaken-assignment flag from the current assignee to their team lead (`raised_by`, `team_lead`, `reason`, `status` of `open`, `reassigned`, or `dismissed`, `resolution_note`); one spike can be open per incident. Assignment, request, spike, and demo activity is also written to `incident_events` (`assigned`, `assignment_requested`, `assignment_accepted`, `assignment_declined`, `spike_raised`, `spike_dismissed`, `demo_started`, `demo_notification_simulated`).
+
 ### `on_call_schedules` and `on_call_schedule_members`
 
-`on_call_schedules` stores `id`, `tenant_id`, unique-per-tenant `name`, IANA `timezone`, `rotation_interval_minutes` (15–43200), `rotation_starts_at timestamptz`, and timestamps. `on_call_schedule_members` stores an ordered list of unique responder handles per schedule. Every member must have at least one active notification channel at create/update time. The worker rotates by elapsed intervals from the start instant; the timezone is used for display and does not change the elapsed-minute rotation cadence. Use a schedule's name as an escalation step's `target` when `target_type` is `schedule`.
+`on_call_schedules` stores `id`, `tenant_id`, unique-per-tenant `name`, IANA `timezone`, `rotation_interval_minutes` (15–43200), `rotation_starts_at timestamptz`, `team text` (empty by default; when set, members must belong to that team/group or to no team at all), and timestamps. `on_call_schedule_members` stores an ordered list of unique responder handles per schedule. Every member must have at least one active deliverable channel (`email`, `webhook`, `slack`, or `discord`) at create/update time; contact-only channels do not count. The worker rotates by elapsed intervals from the start instant; the timezone is used for display and does not change the elapsed-minute rotation cadence. Use a schedule's name as an escalation step's `target` when `target_type` is `schedule`.
 
 ## Runtime SQL procedures
 
@@ -78,7 +82,7 @@ The worker first returns `sending` rows with leases older than ten minutes to `p
 
 ### Create or replace an on-call schedule
 
-Schedule create/update validates the IANA timezone, interval bounds, unique ordered handles, and that every handle has an active channel in the same tenant. The schedule row and its ordered member rows are written in a transaction. Updating replaces all member rows atomically; deleting a schedule cascades its member rows.
+Schedule create/update validates the IANA timezone, interval bounds, unique ordered handles, and that every handle has an active deliverable channel in the same tenant. The schedule row and its ordered member rows are written in a transaction. Updating replaces all member rows atomically; deleting a schedule cascades its member rows.
 
 ## Migration index
 
@@ -95,3 +99,6 @@ Schedule create/update validates the IANA timezone, interval bounds, unique orde
 | `0009_login_sessions.sql` | Login accounts and hashed browser sessions |
 | `0010_on_call_schedules.sql` | Timezone-labelled on-call rotations and ordered members |
 | `0011_product_owner.sql` | Product-owner identity flag for platform tenant administration |
+| `0012_tenant_api_key_expiration.sql` | Optional expiration timestamps on tenant API keys |
+| `0013_channels_removal_schedule_team.sql` | Slack, Discord, phone, mobile, and WhatsApp channels; nullable outbox `recipient_id` for responder removal; schedule `team` |
+| `0014_relay_assignment_spikes.sql` | Team leads, assignment requests, and spikes on mistaken assignments |

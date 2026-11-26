@@ -20,6 +20,7 @@ tags:
   - name: Notifications
   - name: Integrations
   - name: Tenant administration
+  - name: Relay workflow
 security:
   - bearerAuth: []
   - relayopsSession: []
@@ -88,7 +89,7 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/RecoverLoginInput' } } }
       responses:
-        '200': { description: Generic recovery result, content: { application/json: { schema: { type: object, properties: { message: { type: string } } } } }
+        '200': { description: Generic recovery result, content: { application/json: { schema: { type: object, properties: { message: { type: string } } } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -117,7 +118,7 @@ paths:
       summary: List current user's active browser sessions
       security: [{ relayopsSession: [] }]
       responses:
-        '200': { description: Session list, content: { application/json: { schema: { type: object, properties: { sessions: { type: array, items: { $ref: '#/components/schemas/Session' } } } } } }
+        '200': { description: Session list, content: { application/json: { schema: { type: object, properties: { sessions: { type: array, items: { $ref: '#/components/schemas/Session' } } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
   /v1/auth/sessions/{id}:
     delete:
@@ -137,7 +138,7 @@ paths:
       summary: List tenant login accounts
       description: Owner or admin role required.
       responses:
-        '200': { description: Login accounts, content: { application/json: { schema: { type: object, properties: { accounts: { type: array, items: { $ref: '#/components/schemas/LoginAccount' } } } } } }
+        '200': { description: Login accounts, content: { application/json: { schema: { type: object, properties: { accounts: { type: array, items: { $ref: '#/components/schemas/LoginAccount' } } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
     post:
@@ -149,7 +150,7 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/NewLoginAccount' } } }
       responses:
-        '201': { description: Account created, content: { application/json: { schema: { type: object, properties: { account: { $ref: '#/components/schemas/LoginAccount' } } } } }
+        '201': { description: Account created, content: { application/json: { schema: { type: object, properties: { account: { $ref: '#/components/schemas/LoginAccount' } } } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -163,8 +164,8 @@ paths:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/AlertInput' } } }
       responses:
-        '200': { description: Existing incident updated, content: { application/json: { schema: { type: object, properties: { incident: { $ref: '#/components/schemas/Incident' } } } } }
-        '201': { description: Incident created, content: { application/json: { schema: { type: object, properties: { incident: { $ref: '#/components/schemas/Incident' } } } } }
+        '200': { description: Existing incident updated, content: { application/json: { schema: { type: object, properties: { incident: { $ref: '#/components/schemas/Incident' } } } } } }
+        '201': { description: Incident created, content: { application/json: { schema: { type: object, properties: { incident: { $ref: '#/components/schemas/Incident' } } } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -181,7 +182,7 @@ paths:
           description: Case-insensitive partial match for an incident key such as RLY-00001234, internal UUID, or title.
           schema: { type: string, maxLength: 200 }
       responses:
-        '200': { description: Incident collection, content: { application/json: { schema: { type: object, properties: { incidents: { type: array, items: { $ref: '#/components/schemas/Incident' } }, total_incidents: { type: integer, format: int64 }, matching_incidents: { type: integer, format: int64 } } } } }
+        '200': { description: Incident collection, content: { application/json: { schema: { type: object, properties: { incidents: { type: array, items: { $ref: '#/components/schemas/Incident' } }, total_incidents: { type: integer, format: int64 }, matching_incidents: { type: integer, format: int64 } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
   /v1/incidents/{id}:
     get:
@@ -190,7 +191,7 @@ paths:
       summary: Read one incident
       parameters: [{ $ref: '#/components/parameters/UuidPath' }]
       responses:
-        '200': { description: Incident, content: { application/json: { schema: { type: object, properties: { incident: { $ref: '#/components/schemas/Incident' } } } } }
+        '200': { description: Incident, content: { application/json: { schema: { type: object, properties: { incident: { $ref: '#/components/schemas/Incident' } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
   /v1/incidents/{id}/acknowledge:
@@ -202,7 +203,7 @@ paths:
       parameters: [{ $ref: '#/components/parameters/UuidPath' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/IncidentAction' } } } }
       responses:
-        '200': { description: Updated incident, content: { application/json: { schema: { type: object, properties: { incident: { $ref: '#/components/schemas/Incident' } } } } }
+        '200': { description: Updated incident, content: { application/json: { schema: { type: object, properties: { incident: { $ref: '#/components/schemas/Incident' } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -211,11 +212,11 @@ paths:
       tags: [Incidents]
       operationId: resolveIncident
       summary: Resolve an incident
-      description: Owner, admin, or responder role. Writes a resolution event and cancels active escalation.
+      description: Owner, admin, or responder role. A resolution `note` of at least 3 characters (at most 2000) is required and is recorded on the timeline; requests without one are rejected with 400. Cancels active escalation.
       parameters: [{ $ref: '#/components/parameters/UuidPath' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/IncidentAction' } } } }
       responses:
-        '200': { description: Updated incident, content: { application/json: { schema: { type: object, properties: { incident: { $ref: '#/components/schemas/Incident' } } } } }
+        '200': { description: Updated incident, content: { application/json: { schema: { type: object, properties: { incident: { $ref: '#/components/schemas/Incident' } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -226,7 +227,7 @@ paths:
       summary: List a tenant incident's audit events
       parameters: [{ $ref: '#/components/parameters/UuidPath' }]
       responses:
-        '200': { description: Chronological incident events, content: { application/json: { schema: { type: object, properties: { events: { type: array, items: { $ref: '#/components/schemas/IncidentEvent' } } } } } }
+        '200': { description: Chronological incident events, content: { application/json: { schema: { type: object, properties: { events: { type: array, items: { $ref: '#/components/schemas/IncidentEvent' } } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
   /v1/analytics/incidents:
     get:
@@ -234,7 +235,7 @@ paths:
       operationId: incidentAnalytics
       summary: Read total incidents by source and assignee
       responses:
-        '200': { description: Tenant incident totals, content: { application/json: { schema: { type: object, properties: { total: { type: integer, format: int64 }, by_integration: { type: array, items: { $ref: '#/components/schemas/CountPair' } }, by_user: { type: array, items: { $ref: '#/components/schemas/CountPair' } } } } } }
+        '200': { description: Tenant incident totals, content: { application/json: { schema: { type: object, properties: { total: { type: integer, format: int64 }, by_integration: { type: array, items: { $ref: '#/components/schemas/CountPair' } }, by_user: { type: array, items: { $ref: '#/components/schemas/CountPair' } } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
   /v1/escalation-policies:
     get:
@@ -242,7 +243,7 @@ paths:
       operationId: listEscalationPolicies
       summary: List tenant escalation policies
       responses:
-        '200': { description: Policies, content: { application/json: { schema: { type: object, properties: { policies: { type: array, items: { $ref: '#/components/schemas/EscalationPolicy' } } } } } }
+        '200': { description: Policies, content: { application/json: { schema: { type: object, properties: { policies: { type: array, items: { $ref: '#/components/schemas/EscalationPolicy' } } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [Escalations]
@@ -251,7 +252,7 @@ paths:
       description: Owner or admin role.
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/EscalationPolicyInput' } } } }
       responses:
-        '201': { description: Policy created, content: { application/json: { schema: { type: object, properties: { policy: { $ref: '#/components/schemas/EscalationPolicy' } } } } }
+        '201': { description: Policy created, content: { application/json: { schema: { type: object, properties: { policy: { $ref: '#/components/schemas/EscalationPolicy' } } } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -264,7 +265,7 @@ paths:
       parameters: [{ $ref: '#/components/parameters/UuidPath' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/EscalationPolicyInput' } } } }
       responses:
-        '200': { description: Updated policy, content: { application/json: { schema: { type: object, properties: { policy: { $ref: '#/components/schemas/EscalationPolicy' } } } } }
+        '200': { description: Updated policy, content: { application/json: { schema: { type: object, properties: { policy: { $ref: '#/components/schemas/EscalationPolicy' } } } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -287,7 +288,7 @@ paths:
       summary: List raw notification targets
       description: Owner or admin role.
       responses:
-        '200': { description: Recipients, content: { application/json: { schema: { type: object, properties: { recipients: { type: array, items: { $ref: '#/components/schemas/Recipient' } } } } } }
+        '200': { description: Recipients, content: { application/json: { schema: { type: object, properties: { recipients: { type: array, items: { $ref: '#/components/schemas/Recipient' } } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
     post:
@@ -297,7 +298,7 @@ paths:
       description: Owner or admin role. Supported channels are email and HTTPS webhook.
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RecipientInput' } } } }
       responses:
-        '201': { description: Recipient created, content: { application/json: { schema: { type: object, properties: { recipient: { $ref: '#/components/schemas/Recipient' } } } } }
+        '201': { description: Recipient created, content: { application/json: { schema: { type: object, properties: { recipient: { $ref: '#/components/schemas/Recipient' } } } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -310,7 +311,7 @@ paths:
       parameters: [{ $ref: '#/components/parameters/UuidPath' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/RecipientInput' } } } }
       responses:
-        '200': { description: Updated recipient, content: { application/json: { schema: { type: object, properties: { recipient: { $ref: '#/components/schemas/Recipient' } } } } }
+        '200': { description: Updated recipient, content: { application/json: { schema: { type: object, properties: { recipient: { $ref: '#/components/schemas/Recipient' } } } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -333,7 +334,7 @@ paths:
       summary: List responder channel profiles
       description: Owner or admin role. Profiles are assembled from notification recipients.
       responses:
-        '200': { description: User profiles, content: { application/json: { schema: { type: object, properties: { users: { type: array, items: { $ref: '#/components/schemas/NotificationUser' } } } } } }
+        '200': { description: User profiles, content: { application/json: { schema: { type: object, properties: { users: { type: array, items: { $ref: '#/components/schemas/NotificationUser' } } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
     post:
@@ -343,7 +344,7 @@ paths:
       description: Owner or admin role. Configured email/webhook channels are persisted as notification recipient records.
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/NotificationUserCreateInput' } } } }
       responses:
-        '201': { description: User profile created, content: { application/json: { schema: { type: object, properties: { user: { $ref: '#/components/schemas/NotificationUser' } } } } }
+        '201': { description: User profile created, content: { application/json: { schema: { type: object, properties: { user: { $ref: '#/components/schemas/NotificationUser' } } } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -356,18 +357,22 @@ paths:
       parameters: [{ name: handle, in: path, required: true, schema: { type: string, maxLength: 120 } }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/NotificationUserInput' } } } }
       responses:
-        '200': { description: Updated profile, content: { application/json: { schema: { type: object, properties: { user: { $ref: '#/components/schemas/NotificationUser' } } } } }
+        '200': { description: Updated profile, content: { application/json: { schema: { type: object, properties: { user: { $ref: '#/components/schemas/NotificationUser' } } } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
     delete:
       tags: [Notifications]
       operationId: deactivateNotificationUser
-      summary: Deactivate all responder channels
-      description: Owner or admin role.
-      parameters: [{ name: handle, in: path, required: true, schema: { type: string, maxLength: 120 } }]
+      summary: Pause a responder, or remove them permanently
+      description: Owner or admin role. Without parameters every channel of the responder is paused (deactivated) and can be resumed with PUT. With permanent=true the responder and all of their channels are deleted; queued notifications for them are cancelled, delivery history is kept, and the responder's automatically created default relay route is removed. Permanent removal is refused with 409 while the responder is still a member of an on-call schedule or a target of a relay route.
+      parameters:
+        - { name: handle, in: path, required: true, schema: { type: string, maxLength: 120 } }
+        - { name: permanent, in: query, required: false, schema: { type: boolean, default: false }, description: Delete the responder instead of pausing them }
       responses:
-        '204': { description: All matching channels deactivated }
+        '204': { description: Responder paused or removed }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Responder is still used by an on-call schedule or relay route; the message names them, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -378,7 +383,7 @@ paths:
       summary: List the 500 newest notification deliveries
       description: Owner or admin role. Includes pending, sending, delivered, dead, and cancelled outbox rows.
       responses:
-        '200': { description: Delivery queue records, content: { application/json: { schema: { type: object, properties: { deliveries: { type: array, items: { $ref: '#/components/schemas/Delivery' } } } } } }
+        '200': { description: Delivery queue records, content: { application/json: { schema: { type: object, properties: { deliveries: { type: array, items: { $ref: '#/components/schemas/Delivery' } } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
   /v1/notification-deliveries/{id}/retry:
@@ -399,7 +404,7 @@ paths:
       operationId: listOnCallSchedules
       summary: List tenant on-call rotations
       responses:
-        '200': { description: Schedules and ordered responder handles, content: { application/json: { schema: { type: object, properties: { schedules: { type: array, items: { $ref: '#/components/schemas/OnCallSchedule' } } } } } }
+        '200': { description: Schedules and ordered responder handles, content: { application/json: { schema: { type: object, properties: { schedules: { type: array, items: { $ref: '#/components/schemas/OnCallSchedule' } } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [Escalations]
@@ -408,7 +413,7 @@ paths:
       description: Owner or admin role. Every member must have an active notification channel. Use the schedule name as an escalation step target of type schedule. Rotation intervals are elapsed minutes from rotation_starts_at; timezone is an IANA display timezone.
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OnCallScheduleInput' } } } }
       responses:
-        '201': { description: Schedule created, content: { application/json: { schema: { type: object, properties: { schedule: { $ref: '#/components/schemas/OnCallSchedule' } } } } }
+        '201': { description: Schedule created, content: { application/json: { schema: { type: object, properties: { schedule: { $ref: '#/components/schemas/OnCallSchedule' } } } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -421,7 +426,7 @@ paths:
       parameters: [{ $ref: '#/components/parameters/UuidPath' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/OnCallScheduleInput' } } } }
       responses:
-        '200': { description: Schedule updated, content: { application/json: { schema: { type: object, properties: { schedule: { $ref: '#/components/schemas/OnCallSchedule' } } } } }
+        '200': { description: Schedule updated, content: { application/json: { schema: { type: object, properties: { schedule: { $ref: '#/components/schemas/OnCallSchedule' } } } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -444,7 +449,7 @@ paths:
       summary: List connector definitions and configurable fields
       description: Owner or admin role. Catalog availability does not guarantee that a provider adapter is implemented.
       responses:
-        '200': { description: Connector catalog, content: { application/json: { schema: { type: object, properties: { connectors: { type: array, items: { $ref: '#/components/schemas/ConnectorDefinition' } } } } } }
+        '200': { description: Connector catalog, content: { application/json: { schema: { type: object, properties: { connectors: { type: array, items: { $ref: '#/components/schemas/ConnectorDefinition' } } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
   /v1/integrations:
@@ -454,7 +459,7 @@ paths:
       summary: List tenant integrations
       description: Owner or admin role.
       responses:
-        '200': { description: Integration configurations, content: { application/json: { schema: { type: object, properties: { integrations: { type: array, items: { $ref: '#/components/schemas/Integration' } } } } } }
+        '200': { description: Integration configurations, content: { application/json: { schema: { type: object, properties: { integrations: { type: array, items: { $ref: '#/components/schemas/Integration' } } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
     post:
@@ -464,7 +469,7 @@ paths:
       description: Owner or admin role. Do not send credential values in configuration; use credential_reference to identify an external secret.
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/IntegrationInput' } } } }
       responses:
-        '201': { description: Integration created, content: { application/json: { schema: { type: object, properties: { integration: { $ref: '#/components/schemas/Integration' } } } } }
+        '201': { description: Integration created, content: { application/json: { schema: { type: object, properties: { integration: { $ref: '#/components/schemas/Integration' } } } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -477,7 +482,7 @@ paths:
       parameters: [{ $ref: '#/components/parameters/UuidPath' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/IntegrationInput' } } } }
       responses:
-        '200': { description: Updated integration, content: { application/json: { schema: { type: object, properties: { integration: { $ref: '#/components/schemas/Integration' } } } } }
+        '200': { description: Updated integration, content: { application/json: { schema: { type: object, properties: { integration: { $ref: '#/components/schemas/Integration' } } } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -501,7 +506,7 @@ paths:
       description: Owner or admin role. Validates configuration shape and reports whether an adapter exists; it does not make a provider API call.
       parameters: [{ $ref: '#/components/parameters/UuidPath' }]
       responses:
-        '200': { description: Validation result, content: { application/json: { schema: { type: object, properties: { integration: { $ref: '#/components/schemas/Integration' }, validation_scope: { type: string }, provider_adapter_available: { type: boolean } } } } }
+        '200': { description: Validation result, content: { application/json: { schema: { type: object, properties: { integration: { $ref: '#/components/schemas/Integration' }, validation_scope: { type: string }, provider_adapter_available: { type: boolean } } } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -512,7 +517,7 @@ paths:
       operationId: currentTenant
       summary: Read the authenticated tenant and role
       responses:
-        '200': { description: Tenant and access context, content: { application/json: { schema: { type: object, properties: { tenant: { $ref: '#/components/schemas/Tenant' }, role: { type: string }, is_product_owner: { type: boolean } } } } }
+        '200': { description: Tenant and access context, content: { application/json: { schema: { type: object, properties: { tenant: { $ref: '#/components/schemas/Tenant' }, role: { type: string }, is_product_owner: { type: boolean } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
   /v1/tenants:
     get:
@@ -521,7 +526,7 @@ paths:
       summary: List tenant records
       description: A product-owner platform key or product-owner login sees all tenants; a tenant owner sees only its own tenant.
       responses:
-        '200': { description: Tenant list, content: { application/json: { schema: { type: object, properties: { tenants: { type: array, items: { $ref: '#/components/schemas/Tenant' } } } } } }
+        '200': { description: Tenant list, content: { application/json: { schema: { type: object, properties: { tenants: { type: array, items: { $ref: '#/components/schemas/Tenant' } } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
     post:
@@ -531,7 +536,7 @@ paths:
       description: Product-owner platform key or product-owner login only. The raw API key is returned once; store it securely.
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/NewTenant' } } } }
       responses:
-        '201': { description: Tenant and initial key created, content: { application/json: { schema: { type: object, properties: { tenant: { $ref: '#/components/schemas/Tenant' }, api_key: { type: string }, warning: { type: string } } } } }
+        '201': { description: Tenant and initial key created, content: { application/json: { schema: { type: object, properties: { tenant: { $ref: '#/components/schemas/Tenant' }, api_key: { type: string }, warning: { type: string } } } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
   /v1/tenants/{tenant_id}/rotate-key:
@@ -546,7 +551,7 @@ paths:
           required: true
           schema: { type: string, format: uuid }
       responses:
-        '200': { description: Replacement key, content: { application/json: { schema: { type: object, properties: { tenant_id: { type: string, format: uuid }, api_key: { type: string }, warning: { type: string } } } } }
+        '200': { description: Replacement key, content: { application/json: { schema: { type: object, properties: { tenant_id: { type: string, format: uuid }, api_key: { type: string }, warning: { type: string } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
   /v1/tenants/{tenant_id}/api-keys:
@@ -561,7 +566,7 @@ paths:
           required: true
           schema: { type: string, format: uuid }
       responses:
-        '200': { description: Tenant API key metadata, content: { application/json: { schema: { type: object, properties: { api_keys: { type: array, items: { $ref: '#/components/schemas/ApiKey' } } } } } }
+        '200': { description: Tenant API key metadata, content: { application/json: { schema: { type: object, properties: { api_keys: { type: array, items: { $ref: '#/components/schemas/ApiKey' } } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
   /v1/tenants/{tenant_id}/api-keys/{id}:
@@ -581,7 +586,7 @@ paths:
           schema: { type: string, format: uuid }
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateApiKey' } } } }
       responses:
-        '200': { description: Updated key metadata, content: { application/json: { schema: { type: object, properties: { api_key: { $ref: '#/components/schemas/ApiKey' } } } } }
+        '200': { description: Updated key metadata, content: { application/json: { schema: { type: object, properties: { api_key: { $ref: '#/components/schemas/ApiKey' } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
     delete:
@@ -619,7 +624,7 @@ paths:
           required: true
           schema: { type: string, format: uuid }
       responses:
-        '200': { description: Replacement key and one-time secret, content: { application/json: { schema: { type: object, properties: { api_key: { $ref: '#/components/schemas/ApiKey' }, secret: { type: string }, warning: { type: string } } } } }
+        '200': { description: Replacement key and one-time secret, content: { application/json: { schema: { type: object, properties: { api_key: { $ref: '#/components/schemas/ApiKey' }, secret: { type: string }, warning: { type: string } } } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -630,7 +635,7 @@ paths:
       summary: List tenant API key metadata
       description: Owner or admin role. Secret values are never returned by this operation.
       responses:
-        '200': { description: API key metadata, content: { application/json: { schema: { type: object, properties: { api_keys: { type: array, items: { $ref: '#/components/schemas/ApiKey' } } } } } }
+        '200': { description: API key metadata, content: { application/json: { schema: { type: object, properties: { api_keys: { type: array, items: { $ref: '#/components/schemas/ApiKey' } } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
     post:
@@ -640,7 +645,7 @@ paths:
       description: Owner and admin may create keys; admins cannot grant owner or admin. Raw secret appears only in this response.
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/NewApiKey' } } } }
       responses:
-        '201': { description: Key created, raw secret shown once, content: { application/json: { schema: { type: object, properties: { api_key: { $ref: '#/components/schemas/ApiKey' }, secret: { type: string }, warning: { type: string } } } } }
+        '201': { description: Key created, raw secret shown once, content: { application/json: { schema: { type: object, properties: { api_key: { $ref: '#/components/schemas/ApiKey' }, secret: { type: string }, warning: { type: string } } } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -653,7 +658,7 @@ paths:
       parameters: [{ $ref: '#/components/parameters/UuidPath' }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateApiKey' } } } }
       responses:
-        '200': { description: Updated key metadata, content: { application/json: { schema: { type: object, properties: { api_key: { $ref: '#/components/schemas/ApiKey' } } } } }
+        '200': { description: Updated key metadata, content: { application/json: { schema: { type: object, properties: { api_key: { $ref: '#/components/schemas/ApiKey' } } } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -677,12 +682,146 @@ paths:
       description: Owner or admin role. Admins cannot rotate owner/admin keys. The old key is revoked atomically; its role and expiration are retained. The replacement secret is returned once.
       parameters: [{ $ref: '#/components/parameters/UuidPath' }]
       responses:
-        '200': { description: Replacement key and one-time secret, content: { application/json: { schema: { type: object, properties: { api_key: { $ref: '#/components/schemas/ApiKey' }, secret: { type: string }, rotated_current_key: { type: boolean }, warning: { type: string } } } } }
+        '200': { description: Replacement key and one-time secret, content: { application/json: { schema: { type: object, properties: { api_key: { $ref: '#/components/schemas/ApiKey' }, secret: { type: string }, rotated_current_key: { type: boolean }, warning: { type: string } } } } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /v1/me/responder:
+    get:
+      tags: [Relay workflow]
+      operationId: getMyResponder
+      summary: The responder the current login maps to
+      description: A login is matched to a responder by e-mail address (an e-mail channel with the same address) or, failing that, by a handle equal to the account display name. API keys have no personal identity, so handle is null. led_teams lists the teams this responder leads.
+      responses:
+        '200': { description: Identity, content: { application/json: { schema: { type: object, properties: { handle: { type: string, nullable: true }, label: { type: string }, led_teams: { type: array, items: { type: string } } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/responders:
+    get:
+      tags: [Relay workflow]
+      operationId: listResponders
+      summary: Active responders and team leads, without contact details
+      description: Owner, admin, or responder role. Used to choose an assignee.
+      responses:
+        '200': { description: Responders and leads, content: { application/json: { schema: { type: object, properties: { responders: { type: array, items: { type: object, properties: { handle: { type: string }, team: { type: string }, groups: { type: array, items: { type: string } } } } }, leads: { type: array, items: { $ref: '#/components/schemas/TeamLead' } } } } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/team-leads:
+    get:
+      tags: [Relay workflow]
+      operationId: listTeamLeads
+      summary: List team leads
+      description: Owner, admin, or responder role.
+      responses:
+        '200': { description: One lead per team or group, content: { application/json: { schema: { type: object, properties: { leads: { type: array, items: { $ref: '#/components/schemas/TeamLead' } } } } } } }
+  /v1/team-leads/{team}:
+    put:
+      tags: [Relay workflow]
+      operationId: setTeamLead
+      summary: Set the lead of a team or group
+      description: Owner or admin role. The handle must be an active member of the team.
+      parameters: [{ name: team, in: path, required: true, schema: { type: string, maxLength: 120 } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [handle], properties: { handle: { type: string } } } } } }
+      responses:
+        '200': { description: Lead saved, content: { application/json: { schema: { type: object, properties: { lead: { $ref: '#/components/schemas/TeamLead' } } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [Relay workflow]
+      operationId: clearTeamLead
+      summary: Remove the lead of a team or group
+      description: Owner or admin role.
+      parameters: [{ name: team, in: path, required: true, schema: { type: string, maxLength: 120 } }]
+      responses:
+        '204': { description: Lead cleared }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/incidents/{id}/assign:
+    post:
+      tags: [Relay workflow]
+      operationId: assignIncident
+      summary: Assign a relay, or ask someone to take it
+      description: Owner, admin, or responder role. Assigning to yourself, or to a member of a team you lead, takes effect immediately (200, mode=assigned). Anyone else creates a request that the assignee must accept (202, mode=requested). Resolved relays cannot be assigned.
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [assignee], properties: { assignee: { type: string }, note: { type: string, maxLength: 500 } } } } } }
+      responses:
+        '200': { description: Assigned immediately }
+        '202': { description: Assignment requested; waiting for the assignee }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The assignee has already been asked and has not answered, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /v1/assignment-requests:
+    get:
+      tags: [Relay workflow]
+      operationId: listAssignmentRequests
+      summary: Pending assignment requests sent to or by the current responder
+      description: Owner and admin logins that are not linked to a responder see every pending request.
+      responses:
+        '200': { description: Pending requests, content: { application/json: { schema: { type: object, properties: { requests: { type: array, items: { type: object, additionalProperties: true } } } } } } }
+  /v1/assignment-requests/{id}/accept:
+    post:
+      tags: [Relay workflow]
+      operationId: acceptAssignment
+      summary: Accept an assignment request
+      description: Only the requested assignee can answer.
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      responses:
+        '204': { description: Accepted; the relay is now assigned }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/assignment-requests/{id}/decline:
+    post:
+      tags: [Relay workflow]
+      operationId: declineAssignment
+      summary: Decline an assignment request
+      description: Only the requested assignee can answer.
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      responses:
+        '204': { description: Declined }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/incidents/{id}/spike:
+    post:
+      tags: [Relay workflow]
+      operationId: raiseSpike
+      summary: Flag a mistaken assignment to the team lead
+      description: Only the current assignee can raise a spike, and the team must have a lead other than the assignee (409 otherwise). One spike can be open per relay.
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [reason], properties: { reason: { type: string, minLength: 3, maxLength: 1000 } } } } } }
+      responses:
+        '201': { description: Spike raised, content: { application/json: { schema: { type: object, properties: { team_lead: { type: string } } } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: No team lead is set, or a spike is already open, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  /v1/spikes:
+    get:
+      tags: [Relay workflow]
+      operationId: listSpikes
+      summary: Open spikes addressed to or raised by the current responder
+      description: Owner and admin logins that are not linked to a responder see every open spike.
+      responses:
+        '200': { description: Open spikes, content: { application/json: { schema: { type: object, properties: { spikes: { type: array, items: { type: object, additionalProperties: true } } } } } } }
+  /v1/spikes/{id}/resolve:
+    post:
+      tags: [Relay workflow]
+      operationId: resolveSpike
+      summary: Reassign the relay or keep it with the assignee
+      description: Only the addressed team lead (or the tenant owner, so a spike cannot be stranded) can answer.
+      parameters: [{ $ref: '#/components/parameters/UuidPath' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [action], properties: { action: { type: string, enum: [reassign, dismiss] }, assignee: { type: string, description: Required for reassign }, note: { type: string, maxLength: 1000 } } } } } }
+      responses:
+        '204': { description: Spike answered }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/demo/relay:
+    post:
+      tags: [Relay workflow]
+      operationId: createDemoRelay
+      summary: Create a rehearsal relay
+      description: Owner, admin, or responder role. Creates a relay marked source=demo with no relay route, so nothing is escalated, queued, or sent. When escalation_policy_id is given the timeline lists who that route would have notified.
+      requestBody: { required: false, content: { application/json: { schema: { type: object, properties: { severity: { type: string, enum: [critical, error, warning, info] }, escalation_policy_id: { type: string, format: uuid, nullable: true } } } } } }
+      responses:
+        '201': { description: Demo relay created, content: { application/json: { schema: { type: object, properties: { incident_id: { type: string, format: uuid }, incident_number: { type: string }, simulated_steps: { type: integer } } } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
 components:
   securitySchemes:
     bearerAuth:
@@ -858,6 +997,7 @@ components:
         rotation_interval_minutes: { type: integer, minimum: 15, maximum: 43200, example: 480 }
         rotation_starts_at: { type: string, format: date-time, description: Rotation anchor instant; ISO 8601 timestamp with timezone offset }
         members: { type: array, minItems: 1, maxItems: 50, items: { type: string }, description: Ordered responder handles; each must have an active channel }
+        team: { type: string, maxLength: 120, default: '', description: Optional team or group. When set, only responders in that team or with no team or group may be members }
     OnCallSchedule:
       allOf:
         - $ref: '#/components/schemas/OnCallScheduleInput'
@@ -866,13 +1006,18 @@ components:
             id: { type: string, format: uuid }
             created_at: { type: string, format: date-time }
             updated_at: { type: string, format: date-time }
+    TeamLead:
+      type: object
+      properties:
+        team: { type: string }
+        handle: { type: string }
     RecipientInput:
       type: object
       required: [handle, channel, destination]
       properties:
         handle: { type: string, minLength: 1, maxLength: 120 }
-        channel: { type: string, enum: [email, webhook] }
-        destination: { type: string, maxLength: 2048, description: Valid email address or public HTTPS webhook URL }
+        channel: { type: string, enum: [email, webhook, slack, discord, phone, mobile, whatsapp], description: email, webhook, slack and discord are delivered by the worker. phone, mobile and whatsapp are stored contact details only and are never queued }
+        destination: { type: string, maxLength: 2048, description: 'Email address; public HTTPS webhook URL; Slack incoming-webhook URL (hooks.slack.com/services/…); Discord webhook URL (discord.com/api/webhooks/…); or an international phone number such as +14155550123 for phone, mobile and whatsapp' }
         team: { type: string, maxLength: 120, default: '' }
         active: { type: boolean, default: true }
     Recipient:
@@ -894,6 +1039,16 @@ components:
         active: { type: boolean, default: true }
         email_active: { type: boolean }
         webhook_active: { type: boolean }
+        slack: { type: string, format: uri, nullable: true, description: Slack incoming-webhook URL }
+        slack_active: { type: boolean }
+        discord: { type: string, format: uri, nullable: true, description: Discord webhook URL }
+        discord_active: { type: boolean }
+        phone: { type: string, nullable: true, description: International number, stored only }
+        phone_active: { type: boolean }
+        mobile: { type: string, nullable: true, description: International mobile number, stored only }
+        mobile_active: { type: boolean }
+        whatsapp: { type: string, nullable: true, description: International WhatsApp number, stored only }
+        whatsapp_active: { type: boolean }
     NotificationUserCreateInput:
       allOf:
         - $ref: '#/components/schemas/NotificationUserInput'
@@ -913,7 +1068,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         incident_id: { type: string, format: uuid }
-        channel: { type: string, enum: [email, webhook] }
+        channel: { type: string, enum: [email, webhook, slack, discord] }
         destination: { type: string }
         status: { type: string, enum: [pending, sending, delivered, dead, cancelled] }
         attempts: { type: integer }

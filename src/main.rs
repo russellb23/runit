@@ -16,6 +16,7 @@ use thiserror::Error;
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
 mod notifications;
+mod relay_workflow;
 mod routes;
 
 #[derive(Clone)]
@@ -35,6 +36,10 @@ enum ApiError {
     NotFound,
     #[error("invalid request: {0}")]
     BadRequest(String),
+    #[error("conflict: {0}")]
+    Conflict(String),
+    #[error("denied: {0}")]
+    Denied(String),
     #[error("database error")]
     Database(#[from] sqlx::Error),
     #[error("internal error")]
@@ -48,6 +53,8 @@ impl IntoResponse for ApiError {
             ApiError::Forbidden => (StatusCode::FORBIDDEN, "your account role cannot perform this action".to_string()),
             ApiError::NotFound => (StatusCode::NOT_FOUND, "resource not found".to_string()),
             ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
+            ApiError::Conflict(msg) => (StatusCode::CONFLICT, msg),
+            ApiError::Denied(msg) => (StatusCode::FORBIDDEN, msg),
             ApiError::Database(err) => {
                 tracing::error!(error = %err, "database operation failed");
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal error".to_string())
@@ -399,13 +406,16 @@ async fn resolve(
 ) -> Result<Json<Value>, ApiError> {
     let tenant_id=authorized(&headers, &state.api_key)?;
     require_role(&headers,&["owner","admin","responder"])?;
+    let resolution=action.note.trim().to_string();
+    if resolution.chars().count()<3{return Err(ApiError::BadRequest("a resolution note describing how the relay was resolved is required to complete it".into()))}
+    if resolution.chars().count()>2000{return Err(ApiError::BadRequest("the resolution note may be at most 2000 characters".into()))}
     let mut tx = state.db.begin().await?;
     let row = sqlx::query_as::<_, Incident>(r#"UPDATE incidents SET status='resolved',resolved_at=now(),updated_at=now()
         WHERE id=$1 AND tenant_id=$2 AND status <> 'resolved'
         RETURNING id,('RLY-'||lpad(incident_number::text,8,'0')) AS incident_number,dedup_key,title,description,severity,status,source,service,labels,metadata,assignee,created_at,updated_at,acknowledged_at,resolved_at,escalation_policy_id"#)
         .bind(id).bind(tenant_id).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
     sqlx::query("INSERT INTO incident_events (incident_id,kind,actor,note) VALUES ($1,'resolved',$2,$3)")
-        .bind(id).bind(if action.actor.is_empty() { "system" } else { &action.actor }).bind(action.note).execute(&mut *tx).await?;
+        .bind(id).bind(if action.actor.is_empty() { "system" } else { &action.actor }).bind(resolution).execute(&mut *tx).await?;
     sqlx::query("UPDATE incident_escalations SET status='cancelled',updated_at=now() WHERE incident_id=$1 AND tenant_id=$2 AND status='active'")
         .bind(id).bind(tenant_id).execute(&mut *tx).await?;
     tx.commit().await?;
@@ -451,27 +461,91 @@ struct NotificationUserInput {
     #[serde(default = "default_true")] active: bool,
     #[serde(default)] email_active: Option<bool>,
     #[serde(default)] webhook_active: Option<bool>,
+    #[serde(default)] slack: Option<String>,
+    #[serde(default)] slack_active: Option<bool>,
+    #[serde(default)] discord: Option<String>,
+    #[serde(default)] discord_active: Option<bool>,
+    #[serde(default)] phone: Option<String>,
+    #[serde(default)] phone_active: Option<bool>,
+    #[serde(default)] mobile: Option<String>,
+    #[serde(default)] mobile_active: Option<bool>,
+    #[serde(default)] whatsapp: Option<String>,
+    #[serde(default)] whatsapp_active: Option<bool>,
 }
 
-fn validate_recipient(input: &RecipientInput) -> Result<(), ApiError> {
-    if input.handle.trim().is_empty() || input.handle.len() > 120 || input.destination.trim().is_empty() || input.destination.len() > 2048 {
-        return Err(ApiError::BadRequest("handle and destination are required and must be within length limits".into()));
+impl NotificationUserInput {
+    /// Every channel a responder can configure, as (channel, destination, per-channel active flag).
+    fn channel_values(&self) -> Vec<(&'static str, Option<String>, Option<bool>)> {
+        vec![
+            ("email", self.email.clone(), self.email_active),
+            ("webhook", self.webhook.clone(), self.webhook_active),
+            ("slack", self.slack.clone(), self.slack_active),
+            ("discord", self.discord.clone(), self.discord_active),
+            ("phone", self.phone.clone(), self.phone_active),
+            ("mobile", self.mobile.clone(), self.mobile_active),
+            ("whatsapp", self.whatsapp.clone(), self.whatsapp_active),
+        ]
     }
-    match input.channel.as_str() {
+}
+
+// Deliverable channels: email, webhook, slack, discord (see notifications::is_deliverable_channel).
+// Contact-only channels: phone, mobile, whatsapp are stored on the responder but never queued.
+
+/// Accepts international numbers with common separators and returns `+<digits>`.
+fn normalize_phone(raw: &str) -> Option<String> {
+    let mut digits = String::new();
+    for (i, ch) in raw.trim().chars().enumerate() {
+        match ch {
+            '+' if i == 0 => digits.push('+'),
+            '0'..='9' => digits.push(ch),
+            ' ' | '-' | '(' | ')' | '.' => {}
+            _ => return None,
+        }
+    }
+    let valid = match digits.strip_prefix('+') {
+        Some(body) => (7..=15).contains(&body.len()) && !body.starts_with('0'),
+        None => false,
+    };
+    if valid { Some(digits) } else { None }
+}
+
+/// Validates a destination for a channel and returns the form that should be stored.
+fn normalize_channel_destination(channel: &str, destination: &str) -> Result<String, ApiError> {
+    let destination = destination.trim();
+    if destination.is_empty() || destination.len() > 2048 {
+        return Err(ApiError::BadRequest("destination is required and must be at most 2048 characters".into()));
+    }
+    match channel {
         "email" => {
-            input.destination.parse::<lettre::Address>()
+            if destination.len() > 320 { return Err(ApiError::BadRequest("email address is too long".into())); }
+            destination.parse::<lettre::Address>()
                 .map_err(|_| ApiError::BadRequest("email destination must be a valid email address".into()))?;
+            Ok(destination.to_string())
         }
         "webhook" => {
-            let url = reqwest::Url::parse(&input.destination)
+            let url = reqwest::Url::parse(destination)
                 .map_err(|_| ApiError::BadRequest("webhook destination must be a valid HTTPS URL".into()))?;
             if url.scheme() != "https" || url.host_str().is_none() || url.host_str().unwrap().eq_ignore_ascii_case("localhost") {
                 return Err(ApiError::BadRequest("webhook destinations must use HTTPS and a public host".into()));
             }
+            Ok(destination.to_string())
         }
-        _ => return Err(ApiError::BadRequest("channel must be email or webhook".into())),
+        "slack" | "discord" => {
+            notifications::validate_chat_webhook(channel, destination).map_err(ApiError::BadRequest)?;
+            Ok(destination.to_string())
+        }
+        "phone" | "mobile" | "whatsapp" => normalize_phone(destination).ok_or_else(|| {
+            ApiError::BadRequest(format!("{channel} destination must be an international number such as +14155550123"))
+        }),
+        _ => Err(ApiError::BadRequest("channel must be one of email, webhook, slack, discord, phone, mobile, or whatsapp".into())),
     }
-    Ok(())
+}
+
+fn validate_recipient(input: &RecipientInput) -> Result<String, ApiError> {
+    if input.handle.trim().is_empty() || input.handle.len() > 120 {
+        return Err(ApiError::BadRequest("handle is required and must be within length limits".into()));
+    }
+    normalize_channel_destination(&input.channel, &input.destination)
 }
 
 async fn list_recipients(State(state): State<AppState>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
@@ -485,9 +559,9 @@ async fn list_recipients(State(state): State<AppState>, headers: HeaderMap) -> R
 async fn create_recipient(State(state): State<AppState>, headers: HeaderMap, Json(input): Json<RecipientInput>) -> Result<(StatusCode, Json<Value>), ApiError> {
     let tenant_id=authorized(&headers, &state.api_key)?;
     require_role(&headers,&["owner","admin"])?;
-    validate_recipient(&input)?;
+    let destination=validate_recipient(&input)?;
     let row = sqlx::query_as::<_, NotificationRecipient>("INSERT INTO notification_recipients (tenant_id,handle,channel,destination,team,active) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id,handle,channel,destination,team,active,created_at,updated_at")
-        .bind(tenant_id).bind(input.handle.trim()).bind(input.channel).bind(input.destination.trim()).bind(input.team.trim()).bind(input.active)
+        .bind(tenant_id).bind(input.handle.trim()).bind(input.channel).bind(destination).bind(input.team.trim()).bind(input.active)
         .fetch_one(&state.db).await?;
     Ok((StatusCode::CREATED, Json(json!({"recipient": row}))))
 }
@@ -495,9 +569,9 @@ async fn create_recipient(State(state): State<AppState>, headers: HeaderMap, Jso
 async fn update_recipient(State(state): State<AppState>, headers: HeaderMap, Path(id): Path<Uuid>, Json(input): Json<RecipientInput>) -> Result<Json<Value>, ApiError> {
     let tenant_id=authorized(&headers, &state.api_key)?;
     require_role(&headers,&["owner","admin"])?;
-    validate_recipient(&input)?;
+    let destination=validate_recipient(&input)?;
     let row = sqlx::query_as::<_, NotificationRecipient>("UPDATE notification_recipients SET handle=$3,channel=$4,destination=$5,team=$6,active=$7,updated_at=now() WHERE id=$1 AND tenant_id=$2 RETURNING id,handle,channel,destination,team,active,created_at,updated_at")
-        .bind(id).bind(tenant_id).bind(input.handle.trim()).bind(input.channel).bind(input.destination.trim()).bind(input.team.trim()).bind(input.active)
+        .bind(id).bind(tenant_id).bind(input.handle.trim()).bind(input.channel).bind(destination).bind(input.team.trim()).bind(input.active)
         .fetch_optional(&state.db).await?.ok_or(ApiError::NotFound)?;
     Ok(Json(json!({"recipient": row})))
 }
@@ -525,16 +599,12 @@ fn validate_user(handle:&str,input:&NotificationUserInput)->Result<(),ApiError>{
     if handle.trim().is_empty()||handle.len()>120||input.team.len()>120{return Err(ApiError::BadRequest("user handle and team must be within length limits".into()))}
     if input.groups.len()>20||input.groups.iter().any(|g|g.trim().is_empty()||g.len()>120){return Err(ApiError::BadRequest("users may belong to at most 20 non-empty groups of at most 120 characters".into()))}
     let mut configured=false;
-    if let Some(email)=input.email.as_deref().filter(|v|!v.trim().is_empty()){
-        if email.len()>320{return Err(ApiError::BadRequest("email address is too long".into()))}
-        email.parse::<lettre::Address>().map_err(|_|ApiError::BadRequest("invalid email address".into()))?;configured=true;
+    for (channel,destination,_) in input.channel_values(){
+        if let Some(destination)=destination.filter(|v|!v.trim().is_empty()){
+            normalize_channel_destination(channel,&destination)?;configured=true;
+        }
     }
-    if let Some(webhook)=input.webhook.as_deref().filter(|v|!v.trim().is_empty()){
-        if webhook.len()>2048{return Err(ApiError::BadRequest("webhook URL is too long".into()))}
-        let url=reqwest::Url::parse(webhook).map_err(|_|ApiError::BadRequest("invalid webhook URL".into()))?;
-        if url.scheme()!="https"||url.host_str().is_none(){return Err(ApiError::BadRequest("webhook URL must use HTTPS".into()))}configured=true;
-    }
-    if !configured{return Err(ApiError::BadRequest("configure at least one channel: email or webhook".into()))}
+    if !configured{return Err(ApiError::BadRequest("configure at least one channel: email, webhook, slack, discord, phone, mobile, or whatsapp".into()))}
     Ok(())
 }
 
@@ -544,9 +614,10 @@ async fn persist_user(db:&PgPool,tenant_id:Uuid,handle:&str,input:NotificationUs
     if groups.is_empty()&&!input.team.trim().is_empty(){groups.push(input.team.trim().to_string())}
     groups=groups.into_iter().map(|g|g.trim().to_string()).collect();groups.sort();groups.dedup();
     let mut tx=db.begin().await?;
-    for (channel,destination) in [("email",input.email),("webhook",input.webhook)]{
+    for (channel,destination,active_flag) in input.channel_values(){
         if let Some(destination)=destination.filter(|v|!v.trim().is_empty()){
-            let channel_active=input.active && if channel=="email" {input.email_active.unwrap_or(true)} else {input.webhook_active.unwrap_or(true)};
+            let destination=normalize_channel_destination(channel,&destination)?;
+            let channel_active=input.active && active_flag.unwrap_or(true);
             sqlx::query(r#"INSERT INTO notification_recipients(tenant_id,handle,channel,destination,team,groups,active)
                 VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(tenant_id,handle,channel) DO UPDATE SET
                 destination=EXCLUDED.destination,team=EXCLUDED.team,groups=EXCLUDED.groups,active=EXCLUDED.active,updated_at=now()"#)
@@ -565,25 +636,85 @@ async fn persist_user(db:&PgPool,tenant_id:Uuid,handle:&str,input:NotificationUs
     Ok(user)
 }
 
+async fn existing_groups(db:&PgPool,tenant_id:Uuid)->Result<Vec<String>,ApiError>{
+    let rows=sqlx::query_scalar::<_,String>("SELECT DISTINCT g.group_name FROM notification_recipients r CROSS JOIN LATERAL unnest(r.groups) AS g(group_name) WHERE r.tenant_id=$1")
+        .bind(tenant_id).fetch_all(db).await?;
+    Ok(rows)
+}
+
+/// Creates a "Default · <name>" relay route for a new responder and for every group that did not exist before.
+/// Existing routes with the same name are left untouched, so deleting a default route is never undone by an edit.
+async fn ensure_default_routes(db:&PgPool,tenant_id:Uuid,handle:&str,groups:&[String],known_groups:&[String],include_user:bool)->Result<(),ApiError>{
+    let mut targets:Vec<(String,&str,String)>=Vec::new();
+    if include_user{targets.push((format!("Default · {handle}"),"user",handle.to_string()))}
+    for group in groups{
+        if !known_groups.contains(group){targets.push((format!("Default · {group}"),"team",group.clone()))}
+    }
+    for (name,target_type,target) in targets{
+        sqlx::query(r#"INSERT INTO escalation_policies(tenant_id,name,description,timezone,repeat_count,repeat_every_minutes,steps)
+            SELECT $1::uuid,$2::text,$3::text,'UTC',0,30,$4::jsonb
+            WHERE NOT EXISTS (SELECT 1 FROM escalation_policies WHERE tenant_id=$1::uuid AND name=$2::text)"#)
+            .bind(tenant_id).bind(&name).bind(format!("Created automatically for {target_type} {target}."))
+            .bind(json!([{"delay_minutes":0,"target_type":target_type,"target":target}]))
+            .execute(db).await?;
+    }
+    Ok(())
+}
+
 async fn create_notification_user(State(state):State<AppState>,headers:HeaderMap,Json(input):Json<serde_json::Value>)->Result<(StatusCode,Json<Value>),ApiError>{
     let tenant_id=authorized(&headers,&state.api_key)?;
     require_role(&headers,&["owner","admin"])?;
     let handle=input.get("handle").and_then(Value::as_str).ok_or_else(||ApiError::BadRequest("handle is required".into()))?.to_string();
     let config:NotificationUserInput=serde_json::from_value(input).map_err(|e|ApiError::BadRequest(e.to_string()))?;
+    let known_groups=existing_groups(&state.db,tenant_id).await?;
     let user=persist_user(&state.db,tenant_id,&handle,config).await?;
+    ensure_default_routes(&state.db,tenant_id,&user.handle,&user.groups,&known_groups,true).await?;
     Ok((StatusCode::CREATED,Json(json!({"user":user}))))
 }
 
 async fn update_notification_user(State(state):State<AppState>,headers:HeaderMap,Path(handle):Path<String>,Json(input):Json<NotificationUserInput>)->Result<Json<Value>,ApiError>{
     let tenant_id=authorized(&headers,&state.api_key)?;
     require_role(&headers,&["owner","admin"])?;
+    let known_groups=existing_groups(&state.db,tenant_id).await?;
     let user=persist_user(&state.db,tenant_id,&handle,input).await?;
+    ensure_default_routes(&state.db,tenant_id,&user.handle,&user.groups,&known_groups,false).await?;
     Ok(Json(json!({"user":user})))
 }
 
-async fn deactivate_notification_user(State(state):State<AppState>,headers:HeaderMap,Path(handle):Path<String>)->Result<StatusCode,ApiError>{
+#[derive(Deserialize)]
+struct RemoveUserQuery { #[serde(default)] permanent: bool }
+
+/// Permanently deletes a responder after checking that no schedule or relay route still depends on them.
+async fn remove_notification_user(db:&PgPool,tenant_id:Uuid,handle:&str)->Result<StatusCode,ApiError>{
+    let existing:i64=sqlx::query_scalar("SELECT count(*)::bigint FROM notification_recipients WHERE tenant_id=$1 AND handle=$2")
+        .bind(tenant_id).bind(handle).fetch_one(db).await?;
+    if existing==0{return Err(ApiError::NotFound)}
+    let default_name=format!("Default · {handle}");
+    let schedules=sqlx::query_scalar::<_,String>("SELECT s.name FROM on_call_schedules s JOIN on_call_schedule_members m ON m.schedule_id=s.id WHERE s.tenant_id=$1 AND m.handle=$2 ORDER BY s.name")
+        .bind(tenant_id).bind(handle).fetch_all(db).await?;
+    let routes=sqlx::query_scalar::<_,String>(r#"SELECT p.name FROM escalation_policies p WHERE p.tenant_id=$1 AND p.name<>$3
+        AND EXISTS (SELECT 1 FROM jsonb_array_elements(p.steps) st WHERE st->>'target_type'='user' AND st->>'target'=$2) ORDER BY p.name"#)
+        .bind(tenant_id).bind(handle).bind(&default_name).fetch_all(db).await?;
+    if !schedules.is_empty()||!routes.is_empty(){
+        let mut parts:Vec<String>=Vec::new();
+        if !schedules.is_empty(){parts.push(format!("on-call schedule(s): {}",schedules.join(", ")))}
+        if !routes.is_empty(){parts.push(format!("relay route(s): {}",routes.join(", ")))}
+        return Err(ApiError::Conflict(format!("{handle} is still used by {}. Remove them from there first, or pause the responder instead.",parts.join("; "))));
+    }
+    let mut tx=db.begin().await?;
+    sqlx::query("UPDATE notification_outbox SET status='cancelled',locked_at=NULL,last_error='recipient removed' WHERE tenant_id=$1 AND status IN ('pending','sending') AND recipient_id IN (SELECT id FROM notification_recipients WHERE tenant_id=$1 AND handle=$2)")
+        .bind(tenant_id).bind(handle).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM notification_recipients WHERE tenant_id=$1 AND handle=$2").bind(tenant_id).bind(handle).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM notification_team_leads WHERE tenant_id=$1 AND handle=$2").bind(tenant_id).bind(handle).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM escalation_policies WHERE tenant_id=$1 AND name=$2").bind(tenant_id).bind(&default_name).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn deactivate_notification_user(State(state):State<AppState>,headers:HeaderMap,Path(handle):Path<String>,Query(query):Query<RemoveUserQuery>)->Result<StatusCode,ApiError>{
     let tenant_id=authorized(&headers,&state.api_key)?;
     require_role(&headers,&["owner","admin"])?;
+    if query.permanent{return remove_notification_user(&state.db,tenant_id,handle.trim()).await}
     let result=sqlx::query("UPDATE notification_recipients SET active=false,updated_at=now() WHERE tenant_id=$1 AND handle=$2")
         .bind(tenant_id).bind(handle).execute(&state.db).await?;
     if result.rows_affected()==0{return Err(ApiError::NotFound)}
@@ -668,6 +799,7 @@ struct OnCallScheduleInput {
     rotation_interval_minutes: i32,
     rotation_starts_at: DateTime<Utc>,
     members: Vec<String>,
+    #[serde(default)] team: String,
 }
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -684,6 +816,8 @@ struct OnCallSchedule {
 fn validate_schedule(input: &mut OnCallScheduleInput) -> Result<(), ApiError> {
     use std::str::FromStr;
     input.name = input.name.trim().to_string();
+    input.team = input.team.trim().to_string();
+    if input.team.len() > 120 { return Err(ApiError::BadRequest("schedule team must be at most 120 characters".into())); }
     input.members = input.members.iter().map(|m| m.trim().to_string()).filter(|m| !m.is_empty()).collect();
     if input.name.is_empty() || input.name.len() > 120 { return Err(ApiError::BadRequest("schedule name is required and must be at most 120 characters".into())); }
     if chrono_tz::Tz::from_str(&input.timezone).is_err() { return Err(ApiError::BadRequest("timezone must be a valid IANA time zone".into())); }
@@ -699,13 +833,20 @@ async fn schedule_json(db: &PgPool, tenant_id: Uuid, id: Uuid) -> Result<Value, 
         .bind(id).bind(tenant_id).fetch_one(db).await?;
     let members=sqlx::query_scalar::<_,String>("SELECT handle FROM on_call_schedule_members WHERE schedule_id=$1 ORDER BY position")
         .bind(id).fetch_all(db).await?;
-    Ok(json!({"id":schedule.id,"name":schedule.name,"timezone":schedule.timezone,"rotation_interval_minutes":schedule.rotation_interval_minutes,"rotation_starts_at":schedule.rotation_starts_at,"members":members,"created_at":schedule.created_at,"updated_at":schedule.updated_at}))
+    let team:String=sqlx::query_scalar("SELECT team FROM on_call_schedules WHERE id=$1 AND tenant_id=$2")
+        .bind(id).bind(tenant_id).fetch_one(db).await?;
+    Ok(json!({"id":schedule.id,"name":schedule.name,"team":team,"timezone":schedule.timezone,"rotation_interval_minutes":schedule.rotation_interval_minutes,"rotation_starts_at":schedule.rotation_starts_at,"members":members,"created_at":schedule.created_at,"updated_at":schedule.updated_at}))
 }
 
-async fn validate_schedule_members(db: &PgPool, tenant_id: Uuid, members: &[String]) -> Result<(), ApiError> {
-    let count:i64=sqlx::query_scalar("SELECT count(DISTINCT handle)::bigint FROM notification_recipients WHERE tenant_id=$1 AND active AND handle=ANY($2)")
+async fn validate_schedule_members(db: &PgPool, tenant_id: Uuid, members: &[String], team: &str) -> Result<(), ApiError> {
+    let count:i64=sqlx::query_scalar("SELECT count(DISTINCT handle)::bigint FROM notification_recipients WHERE tenant_id=$1 AND active AND channel IN ('email','webhook','slack','discord') AND handle=ANY($2)")
         .bind(tenant_id).bind(members.to_vec()).fetch_one(db).await?;
-    if count != members.len() as i64 { return Err(ApiError::BadRequest("every schedule member must have at least one active notification channel in this tenant".into())); }
+    if count != members.len() as i64 { return Err(ApiError::BadRequest("every schedule member must have at least one active deliverable channel (email, webhook, Slack, or Discord) in this tenant".into())); }
+    if !team.is_empty() {
+        let elsewhere:Vec<String>=sqlx::query_scalar("SELECT DISTINCT handle FROM notification_recipients WHERE tenant_id=$1 AND handle=ANY($2) AND (btrim(team)<>'' OR cardinality(groups)>0) AND NOT (team=$3 OR $3=ANY(groups)) ORDER BY handle")
+            .bind(tenant_id).bind(members.to_vec()).bind(team).fetch_all(db).await?;
+        if !elsewhere.is_empty() { return Err(ApiError::BadRequest(format!("{} belong to another team and cannot join the {team} rotation", elsewhere.join(", ")))); }
+    }
     Ok(())
 }
 
@@ -718,20 +859,20 @@ async fn list_schedules(State(state):State<AppState>,headers:HeaderMap)->Result<
 }
 
 async fn create_schedule(State(state):State<AppState>,headers:HeaderMap,Json(mut input):Json<OnCallScheduleInput>)->Result<(StatusCode,Json<Value>),ApiError>{
-    let tenant_id=authorized(&headers,&state.api_key)?;require_role(&headers,&["owner","admin"])?;validate_schedule(&mut input)?;validate_schedule_members(&state.db,tenant_id,&input.members).await?;
+    let tenant_id=authorized(&headers,&state.api_key)?;require_role(&headers,&["owner","admin"])?;validate_schedule(&mut input)?;validate_schedule_members(&state.db,tenant_id,&input.members,&input.team).await?;
     let mut tx=state.db.begin().await?;
-    let schedule=sqlx::query_as::<_,OnCallSchedule>("INSERT INTO on_call_schedules(tenant_id,name,timezone,rotation_interval_minutes,rotation_starts_at) VALUES($1,$2,$3,$4,$5) RETURNING id,name,timezone,rotation_interval_minutes,rotation_starts_at,created_at,updated_at")
-        .bind(tenant_id).bind(&input.name).bind(&input.timezone).bind(input.rotation_interval_minutes).bind(input.rotation_starts_at).fetch_one(&mut *tx).await.map_err(|e|{if let sqlx::Error::Database(d)=&e{if d.code().as_deref()==Some("23505"){return ApiError::BadRequest("a schedule with this name already exists".into())}}ApiError::Database(e)})?;
+    let schedule=sqlx::query_as::<_,OnCallSchedule>("INSERT INTO on_call_schedules(tenant_id,name,timezone,rotation_interval_minutes,rotation_starts_at,team) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,name,timezone,rotation_interval_minutes,rotation_starts_at,created_at,updated_at")
+        .bind(tenant_id).bind(&input.name).bind(&input.timezone).bind(input.rotation_interval_minutes).bind(input.rotation_starts_at).bind(&input.team).fetch_one(&mut *tx).await.map_err(|e|{if let sqlx::Error::Database(d)=&e{if d.code().as_deref()==Some("23505"){return ApiError::BadRequest("a schedule with this name already exists".into())}}ApiError::Database(e)})?;
     for (position,handle) in input.members.iter().enumerate(){sqlx::query("INSERT INTO on_call_schedule_members(schedule_id,position,handle) VALUES($1,$2,$3)").bind(schedule.id).bind(position as i32).bind(handle).execute(&mut *tx).await?;}
     tx.commit().await?;
     Ok((StatusCode::CREATED,Json(json!({"schedule":schedule_json(&state.db,tenant_id,schedule.id).await?}))))
 }
 
 async fn update_schedule(State(state):State<AppState>,headers:HeaderMap,Path(id):Path<Uuid>,Json(mut input):Json<OnCallScheduleInput>)->Result<Json<Value>,ApiError>{
-    let tenant_id=authorized(&headers,&state.api_key)?;require_role(&headers,&["owner","admin"])?;validate_schedule(&mut input)?;validate_schedule_members(&state.db,tenant_id,&input.members).await?;
+    let tenant_id=authorized(&headers,&state.api_key)?;require_role(&headers,&["owner","admin"])?;validate_schedule(&mut input)?;validate_schedule_members(&state.db,tenant_id,&input.members,&input.team).await?;
     let mut tx=state.db.begin().await?;
-    let exists=sqlx::query("UPDATE on_call_schedules SET name=$3,timezone=$4,rotation_interval_minutes=$5,rotation_starts_at=$6,updated_at=now() WHERE id=$1 AND tenant_id=$2")
-        .bind(id).bind(tenant_id).bind(&input.name).bind(&input.timezone).bind(input.rotation_interval_minutes).bind(input.rotation_starts_at).execute(&mut *tx).await?;
+    let exists=sqlx::query("UPDATE on_call_schedules SET name=$3,timezone=$4,rotation_interval_minutes=$5,rotation_starts_at=$6,team=$7,updated_at=now() WHERE id=$1 AND tenant_id=$2")
+        .bind(id).bind(tenant_id).bind(&input.name).bind(&input.timezone).bind(input.rotation_interval_minutes).bind(input.rotation_starts_at).bind(&input.team).execute(&mut *tx).await?;
     if exists.rows_affected()==0{return Err(ApiError::NotFound)}
     sqlx::query("DELETE FROM on_call_schedule_members WHERE schedule_id=$1").bind(id).execute(&mut *tx).await?;
     for (position,handle) in input.members.iter().enumerate(){sqlx::query("INSERT INTO on_call_schedule_members(schedule_id,position,handle) VALUES($1,$2,$3)").bind(id).bind(position as i32).bind(handle).execute(&mut *tx).await?;}
