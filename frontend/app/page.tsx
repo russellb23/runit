@@ -3583,7 +3583,7 @@ export default function Home() {
             )}
           </section>
         )}
-        \n{" "}
+        {" "}
         {page === "users" && (
           <section className="panel settings-page">
             <div className="heading">
