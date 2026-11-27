@@ -91,3 +91,75 @@ button.linklike{background:none;border:0;padding:0;color:#7fb2ff;font:inherit;cu
 .hint{font-size:11px;color:var(--muted);padding:8px 10px;border:1px solid var(--line);border-radius:8px;grid-column:1/-1}
 .hint.ok{color:#7fd6a5;border-color:#2f6b4f}
 .demo-note{margin:10px 0;padding:9px 11px;border:1px dashed #4c8dff;border-radius:8px;font-size:11px;color:#9eb9dc}
+
+/* --- Phase 4: live graph on the landing page, performance, leaderboard --- */
+.stats.stats-live{grid-template-columns:1fr}
+.landing-chart .chart-actions{display:flex;align-items:center;gap:12px}
+.landing-chart .chart-heading>div:first-child{display:grid;gap:4px}
+.perf-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:14px 0 4px}
+button.count-tile.kpi{text-align:left;cursor:pointer;font-family:inherit;color:inherit}
+button.count-tile.kpi:hover,button.count-tile.kpi:focus-visible{border-color:#4c8dff}
+button.count-tile.kpi strong{font-size:22px}
+button.count-tile.kpi span{font-size:10px;color:var(--muted)}
+.perf-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:20px}
+.perf-grid h3,.leaderboard-card h3{font:600 16px 'Space Grotesk';margin:0 0 4px}
+.perf-grid p,.leaderboard-card p{font-size:11px;color:var(--muted);margin:0 0 10px}
+.perf-table{width:100%;border-collapse:collapse;font-size:12px}
+.perf-table th,.perf-table td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+.perf-table td:not(:first-child),.perf-table th:not(:first-child){text-align:right}
+button.th-sort{background:none;border:0;padding:0;color:var(--muted);font:600 10px 'DM Sans',sans-serif;letter-spacing:.5px;text-transform:uppercase;cursor:pointer}
+button.th-sort:hover{color:var(--text)}
+.leaderboard-card{margin-top:24px;border-top:1px solid var(--line);padding-top:18px}
+.seg{display:inline-flex;gap:0}
+.seg .btn:first-child{border-radius:8px 0 0 8px}
+.seg .btn:last-child{border-radius:0 8px 8px 0;margin-left:-1px}
+.leaderboard{list-style:none;margin:10px 0;padding:0;display:grid;gap:8px}
+.leaderboard li{display:grid;grid-template-columns:34px 1fr auto;grid-template-areas:"rank name main" "rank sub sub";align-items:center;gap:2px 12px;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:#101925}
+.leaderboard .rank{grid-area:rank;font:700 18px 'Space Grotesk';color:var(--muted);text-align:center}
+.leaderboard strong{grid-area:name}
+.leaderboard .lb-main{grid-area:main;font-weight:700;color:var(--text)}
+.leaderboard small{grid-area:sub;font-size:10px;color:var(--muted)}
+.leaderboard .podium.p1{border-color:#8a6d2b;background:#1a1710}.leaderboard .podium.p1 .rank{color:#e6b94d}
+.leaderboard .podium.p2{border-color:#5d6b7c}.leaderboard .podium.p2 .rank{color:#b8c4d3}
+.leaderboard .podium.p3{border-color:#7a5a3d}.leaderboard .podium.p3 .rank{color:#d09a6a}
+@media (max-width:820px){.perf-grid{grid-template-columns:1fr}.landing-chart .chart-heading{flex-wrap:wrap}}
+
+/* --- Interactivity audit: lookalikes are real controls, labels are plain text --- */
+button.badge,button.status{border:1px solid transparent;font:inherit;font-size:inherit;cursor:pointer}
+button.badge:hover,button.badge:focus-visible,button.status:hover,button.status:focus-visible{filter:brightness(1.25);outline:1px solid #4c8dff}
+button.integration-tag{font:inherit;font-size:inherit;cursor:pointer}
+button.integration-tag:hover,button.integration-tag:focus-visible{border-color:#4c8dff;color:#fff}
+.meta-label{margin-left:8px;font-size:10px;font-weight:500;letter-spacing:.3px;text-transform:uppercase;color:var(--muted);vertical-align:middle}
+.channel-input em{border:0;padding:0;border-radius:0}
+button.live-toggle{background:transparent;border:0;cursor:pointer;font-family:inherit;padding:2px 4px;border-radius:6px}
+button.live-toggle:hover,button.live-toggle:focus-visible{background:#15202f;outline:1px solid #2f6b4f}
+button.live-toggle.paused{color:#e0b36a}
+button.live-toggle.paused i{background:#e0b36a;box-shadow:none}
+.toast{cursor:pointer}
+button.nav-home{display:flex;align-items:center;gap:9px;background:transparent;border:0;color:inherit;font:inherit;cursor:pointer;padding:0}
+.chip-clear{font-size:11px}
+.incident[role="button"]:focus-visible{outline:2px solid #4c8dff;outline-offset:-2px}
+
+/* --- Phase 5: connections --- */
+.connection-modal{max-width:880px;max-height:92vh;overflow:auto}
+.connector-filters{display:grid;gap:10px;margin:12px 0}
+.connector-search{width:100%}
+.chip-row{display:flex;flex-wrap:wrap;gap:6px}
+.payload-head-actions{display:flex;gap:8px;flex-wrap:wrap}
+.field-help{display:block;margin-top:3px;font-size:10px;font-weight:400;color:var(--muted)}
+.format-block{display:grid;gap:10px}
+.format-panel{display:grid;gap:12px;border:1px solid var(--line);border-radius:10px;padding:12px;background:#0c1420}
+.format-panel p{margin:0;font-size:12px;color:var(--muted)}
+.sev-table,.preview-table{border-collapse:collapse;font-size:12px}
+.sev-table th,.sev-table td,.preview-table th,.preview-table td{text-align:left;padding:4px 12px 4px 0;border-bottom:1px solid var(--line)}
+.preview-table th{font-weight:600;color:var(--muted);text-transform:capitalize;white-space:nowrap}
+.preview-table td{word-break:break-word}
+.sample-block{display:grid;gap:6px}
+.sample-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.sample-actions{display:flex;gap:6px}
+pre.sample,.sample-input{margin:0;padding:10px;border:1px solid var(--line);border-radius:8px;background:#080d14;color:#cfe0f7;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;word-break:break-all}
+.sample-input{width:100%;resize:vertical}
+.preview-result{display:grid;gap:6px}
+.preview-error{font-size:11px;color:#ff9b9b}
+.preview-note{font-size:11px;color:#e0b36a}
+.preview-ok{font-size:11px;color:#7fd6a5}

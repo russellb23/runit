@@ -1,5 +1,5 @@
-use axum::{routing::{delete, get, post}, Router};
-use crate::{auth_me, create_login_account, list_login_accounts, list_login_sessions, login, logout, recover_login, revoke_login_session, setup_login, AppState};
+use axum::{routing::{delete, get, post, put}, Router};
+use crate::{auth_me, create_login_account, list_login_accounts, list_login_sessions, login, logout, recover_login, revoke_login_session, set_login_account_active, setup_login, AppState};
 
 pub(super) fn public_router() -> Router<AppState> {
     Router::new().route("/v1/auth/login", post(login))
@@ -14,4 +14,5 @@ pub(super) fn protected_router() -> Router<AppState> {
         .route("/v1/auth/sessions", get(list_login_sessions))
         .route("/v1/auth/sessions/:id", delete(revoke_login_session))
         .route("/v1/auth/accounts", get(list_login_accounts).post(create_login_account))
+        .route("/v1/auth/accounts/:id/active", put(set_login_account_active))
 }

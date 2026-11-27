@@ -15,6 +15,7 @@ use std::{env, net::SocketAddr, sync::Arc};
 use thiserror::Error;
 use tower_http::cors::CorsLayer;
 use uuid::Uuid;
+mod connectors;
 mod notifications;
 mod relay_workflow;
 mod routes;
@@ -286,6 +287,34 @@ async fn list_login_accounts(State(state):State<AppState>,headers:HeaderMap)->Re
     let rows=sqlx::query_as::<_,LoginAccount>("SELECT id,email,display_name,role,active,is_product_owner,created_at FROM tenant_users WHERE tenant_id=$1 ORDER BY display_name,email").bind(tenant_id).fetch_all(&state.db).await?;
     Ok(Json(json!({"accounts":rows})))
 }
+#[derive(Deserialize)]
+struct AccountActiveInput { active: bool }
+
+/// Enables or disables a login account. Disabling also revokes its browser sessions.
+async fn set_login_account_active(State(state):State<AppState>,headers:HeaderMap,Path(id):Path<Uuid>,Json(input):Json<AccountActiveInput>)->Result<StatusCode,ApiError>{
+    let tenant_id=authorized(&headers,&state.api_key)?;require_role(&headers,&["owner","admin"])?;
+    let actor_role=current_role(&headers)?.to_string();
+    if current_user_id(&headers).ok()==Some(id){return Err(ApiError::Denied("you cannot disable or enable your own account".into()))}
+    let mut tx=state.db.begin().await?;
+    let target=sqlx::query_as::<_,(String,bool)>("SELECT role,is_product_owner FROM tenant_users WHERE id=$1 AND tenant_id=$2 FOR UPDATE")
+        .bind(id).bind(tenant_id).fetch_optional(&mut *tx).await?.ok_or(ApiError::NotFound)?;
+    let (target_role,is_product_owner)=target;
+    if is_product_owner{return Err(ApiError::Denied("product owner accounts cannot be changed here".into()))}
+    if actor_role!="owner"&&["owner","admin"].contains(&target_role.as_str()){return Err(ApiError::Denied("only an owner can change owner or admin accounts".into()))}
+    if !input.active&&target_role=="owner"{
+        let other_owners:i64=sqlx::query_scalar("SELECT count(*)::bigint FROM tenant_users WHERE tenant_id=$1 AND role='owner' AND active AND id<>$2")
+            .bind(tenant_id).bind(id).fetch_one(&mut *tx).await?;
+        if other_owners==0{return Err(ApiError::Conflict("this is the last active owner; create or enable another owner first".into()))}
+    }
+    sqlx::query("UPDATE tenant_users SET active=$3,failed_login_attempts=0,locked_until=NULL,updated_at=now() WHERE id=$1 AND tenant_id=$2")
+        .bind(id).bind(tenant_id).bind(input.active).execute(&mut *tx).await?;
+    if !input.active{
+        sqlx::query("UPDATE user_sessions SET revoked_at=now() WHERE user_id=$1 AND revoked_at IS NULL").bind(id).execute(&mut *tx).await?;
+    }
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 async fn create_login_account(State(state):State<AppState>,headers:HeaderMap,Json(input):Json<NewLoginAccount>)->Result<(StatusCode,Json<Value>),ApiError>{
     let tenant_id=authorized(&headers,&state.api_key)?;require_role(&headers,&["owner","admin"])?;let actor=current_role(&headers)?;
     if actor!="owner"&&["owner","admin"].contains(&input.role.as_str()){return Err(ApiError::Forbidden)}
@@ -1131,47 +1160,35 @@ async fn revoke_tenant_key_for_product_owner(State(state):State<AppState>,header
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[derive(Serialize)]
-struct ConnectorDefinition { key: &'static str, name: &'static str, category: &'static str, supported: bool, summary: &'static str, fields: &'static [&'static str] }
-
-fn connector_catalog() -> Vec<ConnectorDefinition> {
-    vec![
-        ConnectorDefinition{key:"alert_api",name:"Alert ingestion API",category:"Monitoring",supported:true,summary:"Accept authenticated incident alerts through the RelayOps API.",fields:&["source","service","credential_reference"]},
-        ConnectorDefinition{key:"prometheus_alertmanager",name:"Prometheus Alertmanager",category:"Monitoring",supported:false,summary:"Connector configuration is stored; a provider-specific adapter is not included.",fields:&["endpoint_url","credential_reference"]},
-        ConnectorDefinition{key:"grafana",name:"Grafana",category:"Monitoring",supported:false,summary:"Connector configuration is stored; a provider-specific adapter is not included.",fields:&["endpoint_url","credential_reference"]},
-        ConnectorDefinition{key:"datadog",name:"Datadog",category:"Monitoring",supported:false,summary:"Connector configuration is stored; a provider-specific adapter is not included.",fields:&["site","credential_reference"]},
-        ConnectorDefinition{key:"new_relic",name:"New Relic",category:"Monitoring",supported:false,summary:"Connector configuration is stored; a provider-specific adapter is not included.",fields:&["account_id","credential_reference"]},
-        ConnectorDefinition{key:"aws_cloudwatch",name:"AWS CloudWatch",category:"Cloud",supported:false,summary:"Connector configuration is stored; a provider-specific adapter is not included.",fields:&["region","credential_reference"]},
-        ConnectorDefinition{key:"google_cloud_monitoring",name:"Google Cloud Monitoring",category:"Cloud",supported:false,summary:"Connector configuration is stored; a provider-specific adapter is not included.",fields:&["project_id","credential_reference"]},
-        ConnectorDefinition{key:"azure_monitor",name:"Azure Monitor",category:"Cloud",supported:false,summary:"Connector configuration is stored; a provider-specific adapter is not included.",fields:&["subscription_id","credential_reference"]},
-        ConnectorDefinition{key:"smtp_email",name:"SMTP Email",category:"Notifications",supported:true,summary:"Delivery uses SMTP_URL and SMTP_FROM from the server environment.",fields:&["from_email","credential_reference"]},
-        ConnectorDefinition{key:"signed_webhook",name:"Signed HTTPS Webhook",category:"Notifications",supported:true,summary:"Delivery uses HTTPS responder targets and WEBHOOK_SIGNING_SECRET from the server environment.",fields:&["destination_url","credential_reference"]},
-        ConnectorDefinition{key:"slack",name:"Slack",category:"Chat",supported:false,summary:"Connector configuration is stored; a provider-specific adapter is not included.",fields:&["workspace","credential_reference"]},
-        ConnectorDefinition{key:"microsoft_teams",name:"Microsoft Teams",category:"Chat",supported:false,summary:"Connector configuration is stored; a provider-specific adapter is not included.",fields:&["tenant_id","credential_reference"]},
-        ConnectorDefinition{key:"jira",name:"Jira",category:"ITSM",supported:false,summary:"Connector configuration is stored; a provider-specific adapter is not included.",fields:&["site_url","project_key","credential_reference"]},
-        ConnectorDefinition{key:"servicenow",name:"ServiceNow",category:"ITSM",supported:false,summary:"Connector configuration is stored; a provider-specific adapter is not included.",fields:&["instance_url","credential_reference"]},
-    ]
-}
-
 #[derive(Serialize,sqlx::FromRow)]
 struct TenantIntegration { id:Uuid,tenant_id:Uuid,connector_key:String,name:String,enabled:bool,configuration:Value,credential_reference:Option<String>,validation_status:String,last_validated_at:Option<DateTime<Utc>>,created_at:DateTime<Utc>,updated_at:DateTime<Utc> }
 #[derive(Deserialize)]
 struct TenantIntegrationInput { connector_key:String,name:String,#[serde(default="default_true")] enabled:bool,#[serde(default="empty_object")] configuration:Value,#[serde(default)] credential_reference:Option<String> }
 fn empty_object()->Value { json!({}) }
 
-fn validate_integration_input(input:&TenantIntegrationInput)->Result<(),ApiError>{
-    if input.name.trim().is_empty()||input.name.trim().len()>120{return Err(ApiError::BadRequest("integration name is required and must be at most 120 characters".into()))}
-    let connector=connector_catalog().into_iter().find(|c|c.key==input.connector_key).ok_or_else(||ApiError::BadRequest("unknown connector key".into()))?;
+/// Validates a connection and returns the configuration to store, with connector defaults filled in.
+/// Only inbound connections are supported; outbound connector keys from earlier releases are rejected.
+fn validate_integration_input(input:&TenantIntegrationInput)->Result<Value,ApiError>{
+    if input.name.trim().is_empty()||input.name.trim().len()>120{return Err(ApiError::BadRequest("connection name is required and must be at most 120 characters".into()))}
+    if connectors::LEGACY_OUTBOUND.contains(&input.connector_key.as_str()){return Err(ApiError::BadRequest("outbound connections are not supported yet; only inbound connections can be created or changed. Configure outbound notification channels under Users & channels".into()))}
+    let connector=connectors::find(&input.connector_key).ok_or_else(||ApiError::BadRequest("unknown connector key".into()))?;
     if !input.configuration.is_object(){return Err(ApiError::BadRequest("configuration must be a JSON object".into()))}
     if input.credential_reference.as_ref().is_some_and(|v|v.len()>512||v.trim().is_empty()){return Err(ApiError::BadRequest("credential_reference must be non-empty and at most 512 characters".into()))}
-    if let Some(fields)=input.configuration.get("payload_fields") {
+    let configuration=connectors::normalize_configuration(connector,&input.configuration).map_err(ApiError::BadRequest)?;
+    if let Some(fields)=configuration.get("payload_fields") {
         let fields=fields.as_array().ok_or_else(||ApiError::BadRequest("payload_fields must be an array".into()))?;
         if fields.len()>50{return Err(ApiError::BadRequest("payload_fields may contain at most 50 entries".into()))}
         let mut seen:Vec<String>=Vec::new();
+        let mut seen_targets:Vec<&str>=Vec::new();
         for field in fields {
             let path=field.get("path").and_then(Value::as_str).ok_or_else(||ApiError::BadRequest("each payload field requires a path".into()))?;
             if path.trim().is_empty()||path.len()>200||!path.split('.').all(|part|!part.is_empty()&&part.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'_'||b==b'-')){return Err(ApiError::BadRequest("payload field paths must use dot-separated letters, digits, underscores, or hyphens (max 200 characters)".into()))}
-            if seen.iter().any(|existing|existing==path){return Err(ApiError::BadRequest("payload field paths must be unique".into()))}seen.push(path.to_string());
+            let maps_to=field.get("maps_to").map(|v|v.as_str().ok_or_else(||ApiError::BadRequest("payload field maps_to must be text".into()))).transpose()?.unwrap_or("");
+            if !maps_to.is_empty()&&!connectors::MAPS_TO.contains(&maps_to){return Err(ApiError::BadRequest("payload field maps_to must be dedup_key, title, description, severity, service, status, or url".into()))}
+            if !maps_to.is_empty()&&seen_targets.contains(&maps_to){return Err(ApiError::BadRequest(format!("only one payload field can feed {maps_to}")))}
+            if !maps_to.is_empty(){seen_targets.push(maps_to)}
+            let identity=format!("{path}>{maps_to}");
+            if seen.contains(&identity){return Err(ApiError::BadRequest("payload field paths must be unique".into()))}seen.push(identity);
             let field_type=field.get("type").and_then(Value::as_str).ok_or_else(||ApiError::BadRequest("each payload field requires a type".into()))?;
             if !["string","number","boolean","object","array"].contains(&field_type){return Err(ApiError::BadRequest("payload field type must be string, number, boolean, object, or array".into()))}
             if field.get("required").is_some_and(|v|!v.is_boolean()){return Err(ApiError::BadRequest("payload field required must be boolean".into()))}
@@ -1179,21 +1196,15 @@ fn validate_integration_input(input:&TenantIntegrationInput)->Result<(),ApiError
         }
     }
     let forbidden=["password","token","secret","api_key","apikey","client_secret","access_key"];
-    if let Some(values)=input.configuration.as_object(){
+    if let Some(values)=configuration.as_object(){
         for key in values.keys(){let normalized=key.to_ascii_lowercase();if forbidden.iter().any(|word|normalized.contains(word)){return Err(ApiError::BadRequest("do not submit credentials or secret values; use a secret-manager credential_reference".into()))}}
     }
-    if connector.key=="signed_webhook"{
-        if let Some(endpoint)=input.configuration.get("destination_url").and_then(Value::as_str){
-            let url=reqwest::Url::parse(endpoint).map_err(|_|ApiError::BadRequest("destination_url must be a valid HTTPS URL".into()))?;
-            if url.scheme()!="https"||url.host_str().is_none()||!url.username().is_empty()||url.password().is_some(){return Err(ApiError::BadRequest("destination_url must use HTTPS and must not contain embedded credentials".into()))}
-        }
-    }
-    Ok(())
+    Ok(configuration)
 }
 
 async fn integration_catalog(headers:HeaderMap)->Result<Json<Value>,ApiError>{
     require_role(&headers,&["owner","admin"])?;
-    Ok(Json(json!({"connectors":connector_catalog()})))
+    Ok(Json(json!({"direction":"inbound","connectors":connectors::catalog()})))
 }
 
 async fn list_integrations(State(state):State<AppState>,headers:HeaderMap)->Result<Json<Value>,ApiError>{
@@ -1204,16 +1215,16 @@ async fn list_integrations(State(state):State<AppState>,headers:HeaderMap)->Resu
 }
 
 async fn create_integration(State(state):State<AppState>,headers:HeaderMap,Json(input):Json<TenantIntegrationInput>)->Result<(StatusCode,Json<Value>),ApiError>{
-    let tenant_id=authorized(&headers,&state.api_key)?;require_role(&headers,&["owner","admin"])?;validate_integration_input(&input)?;
+    let tenant_id=authorized(&headers,&state.api_key)?;require_role(&headers,&["owner","admin"])?;let configuration=validate_integration_input(&input)?;
     let row=sqlx::query_as::<_,TenantIntegration>("INSERT INTO tenant_integrations(tenant_id,connector_key,name,enabled,configuration,credential_reference) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,tenant_id,connector_key,name,enabled,configuration,credential_reference,validation_status,last_validated_at,created_at,updated_at")
-        .bind(tenant_id).bind(input.connector_key).bind(input.name.trim()).bind(input.enabled).bind(input.configuration).bind(input.credential_reference).fetch_one(&state.db).await?;
+        .bind(tenant_id).bind(input.connector_key).bind(input.name.trim()).bind(input.enabled).bind(configuration).bind(input.credential_reference).fetch_one(&state.db).await?;
     Ok((StatusCode::CREATED,Json(json!({"integration":row}))))
 }
 
 async fn update_integration(State(state):State<AppState>,headers:HeaderMap,Path(id):Path<Uuid>,Json(input):Json<TenantIntegrationInput>)->Result<Json<Value>,ApiError>{
-    let tenant_id=authorized(&headers,&state.api_key)?;require_role(&headers,&["owner","admin"])?;validate_integration_input(&input)?;
+    let tenant_id=authorized(&headers,&state.api_key)?;require_role(&headers,&["owner","admin"])?;let configuration=validate_integration_input(&input)?;
     let row=sqlx::query_as::<_,TenantIntegration>("UPDATE tenant_integrations SET connector_key=$3,name=$4,enabled=$5,configuration=$6,credential_reference=$7,validation_status='not_validated',last_validated_at=NULL,updated_at=now() WHERE id=$1 AND tenant_id=$2 RETURNING id,tenant_id,connector_key,name,enabled,configuration,credential_reference,validation_status,last_validated_at,created_at,updated_at")
-        .bind(id).bind(tenant_id).bind(input.connector_key).bind(input.name.trim()).bind(input.enabled).bind(input.configuration).bind(input.credential_reference).fetch_optional(&state.db).await?.ok_or(ApiError::NotFound)?;
+        .bind(id).bind(tenant_id).bind(input.connector_key).bind(input.name.trim()).bind(input.enabled).bind(configuration).bind(input.credential_reference).fetch_optional(&state.db).await?.ok_or(ApiError::NotFound)?;
     Ok(Json(json!({"integration":row})))
 }
 
@@ -1231,7 +1242,7 @@ async fn validate_integration_record(State(state):State<AppState>,headers:Header
     validate_integration_input(&input)?;
     let updated=sqlx::query_as::<_,TenantIntegration>("UPDATE tenant_integrations SET validation_status='valid',last_validated_at=now(),updated_at=now() WHERE id=$1 AND tenant_id=$2 RETURNING id,tenant_id,connector_key,name,enabled,configuration,credential_reference,validation_status,last_validated_at,created_at,updated_at")
         .bind(id).bind(tenant_id).fetch_one(&state.db).await?;
-    let supported=connector_catalog().iter().any(|c|c.key==updated.connector_key&&c.supported);
+    let supported=connectors::find(&updated.connector_key).is_some_and(|c|c.supported);
     Ok(Json(json!({"integration":updated,"validation_scope":"configuration_only","provider_adapter_available":supported})))
 }
 

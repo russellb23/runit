@@ -1,0 +1,2599 @@
+{
+ "connectors": [
+  {
+   "key": "alert_api",
+   "name": "RelayOps Alert API",
+   "category": "Monitoring",
+   "direction": "inbound",
+   "supported": true,
+   "summary": "Send alerts to RelayOps in its own JSON format with an integration-role API key.",
+   "format": "RelayOps native JSON",
+   "config_fields": [
+    {
+     "key": "source",
+     "label": "Source label",
+     "kind": "text",
+     "required": true,
+     "default": "api",
+     "help": "Shown as the relay's source and used to group relays in analysis."
+    },
+    {
+     "key": "default_severity",
+     "label": "Default severity",
+     "kind": "select",
+     "required": true,
+     "default": "warning",
+     "options": [
+      "critical",
+      "error",
+      "warning",
+      "info"
+     ],
+     "help": "Used when the payload has no severity, or one RelayOps does not recognise."
+    },
+    {
+     "key": "default_service",
+     "label": "Default service",
+     "kind": "text",
+     "required": false,
+     "help": "Used when the payload does not identify a service."
+    }
+   ],
+   "payload_fields": [
+    {
+     "path": "dedup_key",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "dedup_key",
+     "description": "Stable key; repeated alerts with the same key update one relay."
+    },
+    {
+     "path": "title",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "title",
+     "description": "Short relay title."
+    },
+    {
+     "path": "description",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "description",
+     "description": "Longer details."
+    },
+    {
+     "path": "severity",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "severity",
+     "description": "critical, error, warning, or info."
+    },
+    {
+     "path": "service",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "service",
+     "description": "Affected service."
+    }
+   ],
+   "severity_map": [],
+   "sender_template": null,
+   "sample_payload": {
+    "dedup_key": "db-primary-cpu",
+    "title": "Primary database CPU above 90%",
+    "description": "CPU has been above 90% for 10 minutes",
+    "severity": "critical",
+    "service": "payments-db"
+   }
+  },
+  {
+   "key": "prometheus_alertmanager",
+   "name": "Prometheus Alertmanager",
+   "category": "Monitoring",
+   "direction": "inbound",
+   "supported": false,
+   "summary": "Format defined. A direct receiver for this provider is not installed yet; the mapping below is what RelayOps expects. Alertmanager batches alerts; the mapping reads the first alert in the batch.",
+   "format": "Alertmanager webhook v4",
+   "config_fields": [
+    {
+     "key": "source",
+     "label": "Source label",
+     "kind": "text",
+     "required": true,
+     "default": "alertmanager",
+     "help": "Shown as the relay's source and used to group relays in analysis."
+    },
+    {
+     "key": "default_severity",
+     "label": "Default severity",
+     "kind": "select",
+     "required": true,
+     "default": "warning",
+     "options": [
+      "critical",
+      "error",
+      "warning",
+      "info"
+     ],
+     "help": "Used when the payload has no severity, or one RelayOps does not recognise."
+    },
+    {
+     "key": "default_service",
+     "label": "Default service",
+     "kind": "text",
+     "required": false,
+     "help": "Used when the payload does not identify a service."
+    }
+   ],
+   "payload_fields": [
+    {
+     "path": "alerts.0.fingerprint",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "dedup_key",
+     "description": "Alertmanager's stable fingerprint for the alert."
+    },
+    {
+     "path": "alerts.0.labels.alertname",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "title",
+     "description": "The alert name label."
+    },
+    {
+     "path": "alerts.0.annotations.description",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "description",
+     "description": "Annotation with the long description."
+    },
+    {
+     "path": "alerts.0.labels.severity",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "severity",
+     "description": "Conventional severity label."
+    },
+    {
+     "path": "alerts.0.labels.service",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "service",
+     "description": "Service label; change to job or app if you use those."
+    },
+    {
+     "path": "status",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "status",
+     "description": "firing or resolved."
+    },
+    {
+     "path": "alerts.0.generatorURL",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "url",
+     "description": "Link back to the expression in Prometheus."
+    }
+   ],
+   "severity_map": [
+    {
+     "from": "page",
+     "to": "critical"
+    },
+    {
+     "from": "critical",
+     "to": "critical"
+    },
+    {
+     "from": "error",
+     "to": "error"
+    },
+    {
+     "from": "ticket",
+     "to": "warning"
+    },
+    {
+     "from": "warning",
+     "to": "warning"
+    },
+    {
+     "from": "info",
+     "to": "info"
+    },
+    {
+     "from": "none",
+     "to": "info"
+    }
+   ],
+   "sender_template": null,
+   "sample_payload": {
+    "version": "4",
+    "groupKey": "{}:{alertname=\"HighCPU\"}",
+    "status": "firing",
+    "receiver": "relayops",
+    "externalURL": "http://alertmanager:9093",
+    "alerts": [
+     {
+      "status": "firing",
+      "labels": {
+       "alertname": "HighCPU",
+       "severity": "critical",
+       "service": "checkout",
+       "instance": "web-1:9100"
+      },
+      "annotations": {
+       "summary": "CPU above 90%",
+       "description": "web-1 CPU has been above 90% for 10 minutes"
+      },
+      "startsAt": "2026-11-26T09:00:00Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://prometheus:9090/graph?g0.expr=cpu",
+      "fingerprint": "b6a4f1c2d9e8a771"
+     }
+    ]
+   }
+  },
+  {
+   "key": "grafana",
+   "name": "Grafana",
+   "category": "Monitoring",
+   "direction": "inbound",
+   "supported": false,
+   "summary": "Format defined. A direct receiver for this provider is not installed yet; the mapping below is what RelayOps expects. Uses Grafana unified alerting webhook contact points.",
+   "format": "Grafana alerting webhook",
+   "config_fields": [
+    {
+     "key": "source",
+     "label": "Source label",
+     "kind": "text",
+     "required": true,
+     "default": "grafana",
+     "help": "Shown as the relay's source and used to group relays in analysis."
+    },
+    {
+     "key": "default_severity",
+     "label": "Default severity",
+     "kind": "select",
+     "required": true,
+     "default": "warning",
+     "options": [
+      "critical",
+      "error",
+      "warning",
+      "info"
+     ],
+     "help": "Used when the payload has no severity, or one RelayOps does not recognise."
+    },
+    {
+     "key": "default_service",
+     "label": "Default service",
+     "kind": "text",
+     "required": false,
+     "help": "Used when the payload does not identify a service."
+    }
+   ],
+   "payload_fields": [
+    {
+     "path": "alerts.0.fingerprint",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "dedup_key",
+     "description": "Grafana's fingerprint for the alert instance."
+    },
+    {
+     "path": "alerts.0.labels.alertname",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "title",
+     "description": "The alert rule name."
+    },
+    {
+     "path": "alerts.0.annotations.summary",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "description",
+     "description": "Summary annotation."
+    },
+    {
+     "path": "alerts.0.labels.severity",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "severity",
+     "description": "Severity label, if your rules set one."
+    },
+    {
+     "path": "alerts.0.labels.service",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "service",
+     "description": "Service label, if your rules set one."
+    },
+    {
+     "path": "status",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "status",
+     "description": "firing or resolved."
+    },
+    {
+     "path": "alerts.0.generatorURL",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "url",
+     "description": "Link to the alert in Grafana."
+    }
+   ],
+   "severity_map": [
+    {
+     "from": "critical",
+     "to": "critical"
+    },
+    {
+     "from": "error",
+     "to": "error"
+    },
+    {
+     "from": "warning",
+     "to": "warning"
+    },
+    {
+     "from": "info",
+     "to": "info"
+    }
+   ],
+   "sender_template": null,
+   "sample_payload": {
+    "receiver": "relayops",
+    "status": "firing",
+    "orgId": 1,
+    "alerts": [
+     {
+      "status": "firing",
+      "labels": {
+       "alertname": "HighCPU",
+       "grafana_folder": "Infra",
+       "severity": "critical",
+       "service": "checkout"
+      },
+      "annotations": {
+       "summary": "CPU above 90%",
+       "description": "web-1 CPU high"
+      },
+      "startsAt": "2026-11-26T09:00:00Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "https://grafana.example.com/alerting/grafana/abc/view",
+      "fingerprint": "c1d2e3f4a5b6"
+     }
+    ],
+    "title": "[FIRING:1] HighCPU (Infra)",
+    "state": "alerting",
+    "externalURL": "https://grafana.example.com/",
+    "version": "1"
+   }
+  },
+  {
+   "key": "datadog",
+   "name": "Datadog",
+   "category": "Monitoring",
+   "direction": "inbound",
+   "supported": false,
+   "summary": "Datadog webhook with a payload template you paste into the webhook integration.",
+   "format": "Datadog webhook (RelayOps template)",
+   "config_fields": [
+    {
+     "key": "source",
+     "label": "Source label",
+     "kind": "text",
+     "required": true,
+     "default": "datadog",
+     "help": "Shown as the relay's source and used to group relays in analysis."
+    },
+    {
+     "key": "default_severity",
+     "label": "Default severity",
+     "kind": "select",
+     "required": true,
+     "default": "warning",
+     "options": [
+      "critical",
+      "error",
+      "warning",
+      "info"
+     ],
+     "help": "Used when the payload has no severity, or one RelayOps does not recognise."
+    },
+    {
+     "key": "default_service",
+     "label": "Default service",
+     "kind": "text",
+     "required": false,
+     "help": "Used when the payload does not identify a service."
+    },
+    {
+     "key": "site",
+     "label": "Datadog site",
+     "kind": "select",
+     "required": false,
+     "default": "datadoghq.com",
+     "options": [
+      "datadoghq.com",
+      "datadoghq.eu",
+      "us3.datadoghq.com",
+      "us5.datadoghq.com",
+      "ap1.datadoghq.com",
+      "ddog-gov.com"
+     ],
+     "help": "The Datadog region your account uses."
+    }
+   ],
+   "payload_fields": [
+    {
+     "path": "id",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "dedup_key",
+     "description": "$ALERT_ID"
+    },
+    {
+     "path": "title",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "title",
+     "description": "$EVENT_TITLE"
+    },
+    {
+     "path": "message",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "description",
+     "description": "$TEXT_ONLY_MSG"
+    },
+    {
+     "path": "priority",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "severity",
+     "description": "$ALERT_PRIORITY (P1 to P5)."
+    },
+    {
+     "path": "host",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "service",
+     "description": "$HOSTNAME"
+    },
+    {
+     "path": "transition",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "status",
+     "description": "$ALERT_TRANSITION"
+    },
+    {
+     "path": "url",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "url",
+     "description": "$LINK"
+    }
+   ],
+   "severity_map": [
+    {
+     "from": "P1",
+     "to": "critical"
+    },
+    {
+     "from": "P2",
+     "to": "error"
+    },
+    {
+     "from": "P3",
+     "to": "warning"
+    },
+    {
+     "from": "P4",
+     "to": "info"
+    },
+    {
+     "from": "P5",
+     "to": "info"
+    },
+    {
+     "from": "normal",
+     "to": "warning"
+    },
+    {
+     "from": "low",
+     "to": "info"
+    }
+   ],
+   "sender_template": "{\"id\":\"$ALERT_ID\",\"title\":\"$EVENT_TITLE\",\"message\":\"$TEXT_ONLY_MSG\",\"priority\":\"$ALERT_PRIORITY\",\"host\":\"$HOSTNAME\",\"transition\":\"$ALERT_TRANSITION\",\"url\":\"$LINK\"}",
+   "sample_payload": {
+    "id": "1234567890",
+    "title": "[Triggered on {host:web-1}] CPU high",
+    "message": "CPU is above 90% on web-1",
+    "priority": "P2",
+    "host": "web-1",
+    "transition": "Triggered",
+    "url": "https://app.datadoghq.com/monitors/123"
+   }
+  },
+  {
+   "key": "new_relic",
+   "name": "New Relic",
+   "category": "Monitoring",
+   "direction": "inbound",
+   "supported": false,
+   "summary": "New Relic workflow webhook with a payload template you paste into the destination. Check variable names in the workflow editor.",
+   "format": "New Relic workflow webhook (RelayOps template)",
+   "config_fields": [
+    {
+     "key": "source",
+     "label": "Source label",
+     "kind": "text",
+     "required": true,
+     "default": "new-relic",
+     "help": "Shown as the relay's source and used to group relays in analysis."
+    },
+    {
+     "key": "default_severity",
+     "label": "Default severity",
+     "kind": "select",
+     "required": true,
+     "default": "warning",
+     "options": [
+      "critical",
+      "error",
+      "warning",
+      "info"
+     ],
+     "help": "Used when the payload has no severity, or one RelayOps does not recognise."
+    },
+    {
+     "key": "default_service",
+     "label": "Default service",
+     "kind": "text",
+     "required": false,
+     "help": "Used when the payload does not identify a service."
+    },
+    {
+     "key": "account_id",
+     "label": "Account ID",
+     "kind": "text",
+     "required": false,
+     "help": "Your New Relic account id (for reference).",
+     "placeholder": ""
+    }
+   ],
+   "payload_fields": [
+    {
+     "path": "id",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "dedup_key",
+     "description": "Issue id."
+    },
+    {
+     "path": "title",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "title",
+     "description": "Issue title."
+    },
+    {
+     "path": "alertConditionNames.0",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "description",
+     "description": "First alert condition name."
+    },
+    {
+     "path": "priority",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "severity",
+     "description": "CRITICAL, HIGH, MEDIUM, or LOW."
+    },
+    {
+     "path": "impactedEntities.0",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "service",
+     "description": "First impacted entity."
+    },
+    {
+     "path": "state",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "status",
+     "description": "Issue state."
+    },
+    {
+     "path": "issueUrl",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "url",
+     "description": "Link to the issue."
+    }
+   ],
+   "severity_map": [
+    {
+     "from": "CRITICAL",
+     "to": "critical"
+    },
+    {
+     "from": "HIGH",
+     "to": "error"
+    },
+    {
+     "from": "MEDIUM",
+     "to": "warning"
+    },
+    {
+     "from": "LOW",
+     "to": "info"
+    }
+   ],
+   "sender_template": "{\"id\":{{json issueId}},\"issueUrl\":{{json issuePageUrl}},\"title\":{{json annotations.title.[0]}},\"priority\":{{json priority}},\"state\":{{json state}},\"impactedEntities\":{{json entitiesData.names}},\"alertConditionNames\":{{json accumulations.conditionName}}}",
+   "sample_payload": {
+    "id": "6ee9f2b3-4c3d",
+    "issueUrl": "https://one.newrelic.com/alerts-ai/issues/abc",
+    "title": "High error rate on checkout",
+    "priority": "CRITICAL",
+    "state": "ACTIVATED",
+    "impactedEntities": [
+     "checkout-service"
+    ],
+    "alertPolicyNames": [
+     "Checkout policy"
+    ],
+    "alertConditionNames": [
+     "Error rate > 5%"
+    ]
+   }
+  },
+  {
+   "key": "zabbix",
+   "name": "Zabbix",
+   "category": "Monitoring",
+   "direction": "inbound",
+   "supported": false,
+   "summary": "Zabbix webhook media type with a payload template using Zabbix macros.",
+   "format": "Zabbix webhook (RelayOps template)",
+   "config_fields": [
+    {
+     "key": "source",
+     "label": "Source label",
+     "kind": "text",
+     "required": true,
+     "default": "zabbix",
+     "help": "Shown as the relay's source and used to group relays in analysis."
+    },
+    {
+     "key": "default_severity",
+     "label": "Default severity",
+     "kind": "select",
+     "required": true,
+     "default": "warning",
+     "options": [
+      "critical",
+      "error",
+      "warning",
+      "info"
+     ],
+     "help": "Used when the payload has no severity, or one RelayOps does not recognise."
+    },
+    {
+     "key": "default_service",
+     "label": "Default service",
+     "kind": "text",
+     "required": false,
+     "help": "Used when the payload does not identify a service."
+    }
+   ],
+   "payload_fields": [
+    {
+     "path": "dedup",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "dedup_key",
+     "description": "{HOST.NAME}:{TRIGGER.ID}, stable across problem and recovery."
+    },
+    {
+     "path": "name",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "title",
+     "description": "{EVENT.NAME}"
+    },
+    {
+     "path": "description",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "description",
+     "description": "{TRIGGER.DESCRIPTION}"
+    },
+    {
+     "path": "severity",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "severity",
+     "description": "{EVENT.SEVERITY}"
+    },
+    {
+     "path": "host",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "service",
+     "description": "{HOST.NAME}"
+    },
+    {
+     "path": "status",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "status",
+     "description": "{EVENT.STATUS}: PROBLEM or OK."
+    },
+    {
+     "path": "url",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "url",
+     "description": "{TRIGGER.URL}"
+    }
+   ],
+   "severity_map": [
+    {
+     "from": "Disaster",
+     "to": "critical"
+    },
+    {
+     "from": "High",
+     "to": "error"
+    },
+    {
+     "from": "Average",
+     "to": "warning"
+    },
+    {
+     "from": "Warning",
+     "to": "warning"
+    },
+    {
+     "from": "Information",
+     "to": "info"
+    },
+    {
+     "from": "Not classified",
+     "to": "info"
+    }
+   ],
+   "sender_template": "{\"dedup\":\"{HOST.NAME}:{TRIGGER.ID}\",\"name\":\"{EVENT.NAME}\",\"severity\":\"{EVENT.SEVERITY}\",\"status\":\"{EVENT.STATUS}\",\"host\":\"{HOST.NAME}\",\"description\":\"{TRIGGER.DESCRIPTION}\",\"url\":\"{TRIGGER.URL}\"}",
+   "sample_payload": {
+    "dedup": "web-1:13579",
+    "name": "High CPU on web-1",
+    "severity": "High",
+    "status": "PROBLEM",
+    "host": "web-1",
+    "description": "CPU above 90% for 5 minutes",
+    "url": "https://zabbix.example.com/tr_events.php?triggerid=13579"
+   }
+  },
+  {
+   "key": "nagios",
+   "name": "Nagios / Icinga",
+   "category": "Monitoring",
+   "direction": "inbound",
+   "supported": false,
+   "summary": "Nagios or Icinga notification command that posts a JSON body built from notification macros.",
+   "format": "Nagios webhook (RelayOps template)",
+   "config_fields": [
+    {
+     "key": "source",
+     "label": "Source label",
+     "kind": "text",
+     "required": true,
+     "default": "nagios",
+     "help": "Shown as the relay's source and used to group relays in analysis."
+    },
+    {
+     "key": "default_severity",
+     "label": "Default severity",
+     "kind": "select",
+     "required": true,
+     "default": "warning",
+     "options": [
+      "critical",
+      "error",
+      "warning",
+      "info"
+     ],
+     "help": "Used when the payload has no severity, or one RelayOps does not recognise."
+    },
+    {
+     "key": "default_service",
+     "label": "Default service",
+     "kind": "text",
+     "required": false,
+     "help": "Used when the payload does not identify a service."
+    }
+   ],
+   "payload_fields": [
+    {
+     "path": "dedup",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "dedup_key",
+     "description": "$HOSTNAME$/$SERVICEDESC$"
+    },
+    {
+     "path": "title",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "title",
+     "description": "Readable summary line."
+    },
+    {
+     "path": "description",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "description",
+     "description": "$SERVICEOUTPUT$"
+    },
+    {
+     "path": "severity",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "severity",
+     "description": "$SERVICESTATE$"
+    },
+    {
+     "path": "host",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "service",
+     "description": "$HOSTNAME$"
+    },
+    {
+     "path": "status",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "status",
+     "description": "$NOTIFICATIONTYPE$"
+    }
+   ],
+   "severity_map": [
+    {
+     "from": "CRITICAL",
+     "to": "critical"
+    },
+    {
+     "from": "DOWN",
+     "to": "critical"
+    },
+    {
+     "from": "UNKNOWN",
+     "to": "error"
+    },
+    {
+     "from": "UNREACHABLE",
+     "to": "error"
+    },
+    {
+     "from": "WARNING",
+     "to": "warning"
+    },
+    {
+     "from": "OK",
+     "to": "info"
+    },
+    {
+     "from": "UP",
+     "to": "info"
+    }
+   ],
+   "sender_template": "{\"dedup\":\"$HOSTNAME$/$SERVICEDESC$\",\"title\":\"$SERVICEDESC$ is $SERVICESTATE$ on $HOSTNAME$\",\"severity\":\"$SERVICESTATE$\",\"description\":\"$SERVICEOUTPUT$\",\"host\":\"$HOSTNAME$\",\"status\":\"$NOTIFICATIONTYPE$\"}",
+   "sample_payload": {
+    "dedup": "web-1/HTTP",
+    "title": "HTTP is CRITICAL on web-1",
+    "severity": "CRITICAL",
+    "description": "HTTP CRITICAL - connection refused",
+    "host": "web-1",
+    "status": "PROBLEM"
+   }
+  },
+  {
+   "key": "splunk",
+   "name": "Splunk",
+   "category": "Monitoring",
+   "direction": "inbound",
+   "supported": false,
+   "summary": "Format defined. A direct receiver for this provider is not installed yet; the mapping below is what RelayOps expects. Uses the Splunk webhook alert action.",
+   "format": "Splunk webhook alert action",
+   "config_fields": [
+    {
+     "key": "source",
+     "label": "Source label",
+     "kind": "text",
+     "required": true,
+     "default": "splunk",
+     "help": "Shown as the relay's source and used to group relays in analysis."
+    },
+    {
+     "key": "default_severity",
+     "label": "Default severity",
+     "kind": "select",
+     "required": true,
+     "default": "warning",
+     "options": [
+      "critical",
+      "error",
+      "warning",
+      "info"
+     ],
+     "help": "Used when the payload has no severity, or one RelayOps does not recognise."
+    },
+    {
+     "key": "default_service",
+     "label": "Default service",
+     "kind": "text",
+     "required": false,
+     "help": "Used when the payload does not identify a service."
+    }
+   ],
+   "payload_fields": [
+    {
+     "path": "search_name",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "dedup_key",
+     "description": "Saved search name; the same search updates one relay."
+    },
+    {
+     "path": "search_name",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "title",
+     "description": "Saved search name."
+    },
+    {
+     "path": "result._raw",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "description",
+     "description": "Raw event text of the first result."
+    },
+    {
+     "path": "result.severity",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "severity",
+     "description": "A severity field in your results, if any."
+    },
+    {
+     "path": "result.host",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "service",
+     "description": "Host of the first result."
+    },
+    {
+     "path": "results_link",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "url",
+     "description": "Link to the results in Splunk."
+    }
+   ],
+   "severity_map": [
+    {
+     "from": "critical",
+     "to": "critical"
+    },
+    {
+     "from": "error",
+     "to": "error"
+    },
+    {
+     "from": "warning",
+     "to": "warning"
+    },
+    {
+     "from": "info",
+     "to": "info"
+    }
+   ],
+   "sender_template": null,
+   "sample_payload": {
+    "sid": "scheduler__admin__search__RMD5abc_at_1732611600_1",
+    "search_name": "Checkout errors > 50 per 5m",
+    "results_link": "https://splunk.example.com:8000/app/search/@go?sid=scheduler__admin__search__RMD5abc_at_1732611600_1",
+    "owner": "admin",
+    "app": "search",
+    "result": {
+     "host": "web-1",
+     "_raw": "ERROR checkout failed: timeout",
+     "severity": "critical"
+    }
+   }
+  },
+  {
+   "key": "dynatrace",
+   "name": "Dynatrace",
+   "category": "Monitoring",
+   "direction": "inbound",
+   "supported": false,
+   "summary": "Dynatrace problem notification with a custom payload using Dynatrace placeholders.",
+   "format": "Dynatrace problem notification (RelayOps template)",
+   "config_fields": [
+    {
+     "key": "source",
+     "label": "Source label",
+     "kind": "text",
+     "required": true,
+     "default": "dynatrace",
+     "help": "Shown as the relay's source and used to group relays in analysis."
+    },
+    {
+     "key": "default_severity",
+     "label": "Default severity",
+     "kind": "select",
+     "required": true,
+     "default": "warning",
+     "options": [
+      "critical",
+      "error",
+      "warning",
+      "info"
+     ],
+     "help": "Used when the payload has no severity, or one RelayOps does not recognise."
+    },
+    {
+     "key": "default_service",
+     "label": "Default service",
+     "kind": "text",
+     "required": false,
+     "help": "Used when the payload does not identify a service."
+    }
+   ],
+   "payload_fields": [
+    {
+     "path": "problemId",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "dedup_key",
+     "description": "{ProblemID}"
+    },
+    {
+     "path": "title",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "title",
+     "description": "{ProblemTitle}"
+    },
+    {
+     "path": "impact",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "description",
+     "description": "{ProblemImpact}"
+    },
+    {
+     "path": "severity",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "severity",
+     "description": "{ProblemSeverity}"
+    },
+    {
+     "path": "entity",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "service",
+     "description": "{ImpactedEntity}"
+    },
+    {
+     "path": "state",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "status",
+     "description": "{State}: OPEN or RESOLVED."
+    },
+    {
+     "path": "url",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "url",
+     "description": "{ProblemURL}"
+    }
+   ],
+   "severity_map": [
+    {
+     "from": "AVAILABILITY",
+     "to": "critical"
+    },
+    {
+     "from": "ERROR",
+     "to": "error"
+    },
+    {
+     "from": "PERFORMANCE",
+     "to": "warning"
+    },
+    {
+     "from": "RESOURCE_CONTENTION",
+     "to": "warning"
+    },
+    {
+     "from": "CUSTOM_ALERT",
+     "to": "info"
+    }
+   ],
+   "sender_template": "{\"problemId\":\"{ProblemID}\",\"title\":\"{ProblemTitle}\",\"state\":\"{State}\",\"severity\":\"{ProblemSeverity}\",\"impact\":\"{ProblemImpact}\",\"url\":\"{ProblemURL}\",\"entity\":\"{ImpactedEntity}\"}",
+   "sample_payload": {
+    "problemId": "P-2611",
+    "title": "Response time degradation",
+    "state": "OPEN",
+    "severity": "PERFORMANCE",
+    "impact": "APPLICATION",
+    "url": "https://abc.live.dynatrace.com/#problems/problemdetails;pid=2611",
+    "entity": "checkout-service"
+   }
+  },
+  {
+   "key": "sentry",
+   "name": "Sentry",
+   "category": "Monitoring",
+   "direction": "inbound",
+   "supported": false,
+   "summary": "Format defined. A direct receiver for this provider is not installed yet; the mapping below is what RelayOps expects. Uses a Sentry issue alert webhook.",
+   "format": "Sentry issue alert webhook",
+   "config_fields": [
+    {
+     "key": "source",
+     "label": "Source label",
+     "kind": "text",
+     "required": true,
+     "default": "sentry",
+     "help": "Shown as the relay's source and used to group relays in analysis."
+    },
+    {
+     "key": "default_severity",
+     "label": "Default severity",
+     "kind": "select",
+     "required": true,
+     "default": "warning",
+     "options": [
+      "critical",
+      "error",
+      "warning",
+      "info"
+     ],
+     "help": "Used when the payload has no severity, or one RelayOps does not recognise."
+    },
+    {
+     "key": "default_service",
+     "label": "Default service",
+     "kind": "text",
+     "required": false,
+     "help": "Used when the payload does not identify a service."
+    },
+    {
+     "key": "organization",
+     "label": "Organization slug",
+     "kind": "text",
+     "required": false,
+     "help": "Your Sentry organization (for reference).",
+     "placeholder": ""
+    }
+   ],
+   "payload_fields": [
+    {
+     "path": "data.event.issue_id",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "dedup_key",
+     "description": "Issue id; repeats update one relay."
+    },
+    {
+     "path": "data.event.title",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "title",
+     "description": "Issue title."
+    },
+    {
+     "path": "data.event.culprit",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "description",
+     "description": "Where the error occurred."
+    },
+    {
+     "path": "data.event.level",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "severity",
+     "description": "fatal, error, warning, info, or debug."
+    },
+    {
+     "path": "data.event.project",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "service",
+     "description": "Project."
+    },
+    {
+     "path": "action",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "status",
+     "description": "Webhook action."
+    },
+    {
+     "path": "data.event.web_url",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "url",
+     "description": "Link to the event."
+    }
+   ],
+   "severity_map": [
+    {
+     "from": "fatal",
+     "to": "critical"
+    },
+    {
+     "from": "error",
+     "to": "error"
+    },
+    {
+     "from": "warning",
+     "to": "warning"
+    },
+    {
+     "from": "info",
+     "to": "info"
+    },
+    {
+     "from": "debug",
+     "to": "info"
+    }
+   ],
+   "sender_template": null,
+   "sample_payload": {
+    "action": "triggered",
+    "data": {
+     "event": {
+      "event_id": "9f2c1b7a",
+      "issue_id": "4501",
+      "title": "TypeError: cannot read properties of undefined",
+      "level": "error",
+      "culprit": "checkout/cart.js in addItem",
+      "web_url": "https://sentry.io/organizations/acme/issues/4501/",
+      "project": "checkout"
+     },
+     "triggered_rule": "New errors in production"
+    }
+   }
+  },
+  {
+   "key": "aws_cloudwatch",
+   "name": "AWS CloudWatch",
+   "category": "Cloud",
+   "direction": "inbound",
+   "supported": false,
+   "summary": "Format defined. A direct receiver for this provider is not installed yet; the mapping below is what RelayOps expects. CloudWatch alarms arrive through SNS; the alarm is a JSON string inside Message and is decoded automatically.",
+   "format": "CloudWatch alarm via SNS",
+   "config_fields": [
+    {
+     "key": "source",
+     "label": "Source label",
+     "kind": "text",
+     "required": true,
+     "default": "cloudwatch",
+     "help": "Shown as the relay's source and used to group relays in analysis."
+    },
+    {
+     "key": "default_severity",
+     "label": "Default severity",
+     "kind": "select",
+     "required": true,
+     "default": "warning",
+     "options": [
+      "critical",
+      "error",
+      "warning",
+      "info"
+     ],
+     "help": "Used when the payload has no severity, or one RelayOps does not recognise."
+    },
+    {
+     "key": "default_service",
+     "label": "Default service",
+     "kind": "text",
+     "required": false,
+     "help": "Used when the payload does not identify a service."
+    },
+    {
+     "key": "region",
+     "label": "AWS region",
+     "kind": "text",
+     "required": false,
+     "help": "Region the alarms live in (for reference).",
+     "placeholder": "us-east-1"
+    }
+   ],
+   "payload_fields": [
+    {
+     "path": "Message.AlarmName",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "dedup_key",
+     "description": "Alarm name; the same alarm updates one relay."
+    },
+    {
+     "path": "Message.AlarmName",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "title",
+     "description": "Alarm name."
+    },
+    {
+     "path": "Message.AlarmDescription",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "description",
+     "description": "Alarm description."
+    },
+    {
+     "path": "Message.Trigger.Namespace",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "service",
+     "description": "Metric namespace, e.g. AWS/EC2."
+    },
+    {
+     "path": "Message.NewStateValue",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "status",
+     "description": "ALARM, OK, or INSUFFICIENT_DATA."
+    }
+   ],
+   "severity_map": [],
+   "sender_template": null,
+   "sample_payload": {
+    "Type": "Notification",
+    "MessageId": "22b80b92-fdea-4c2c-8f9d-bdfb0c7bf324",
+    "TopicArn": "arn:aws:sns:us-east-1:123456789012:alarms",
+    "Subject": "ALARM: \"HighCPU\" in US East (N. Virginia)",
+    "Message": "{\"AlarmName\": \"HighCPU\", \"AlarmDescription\": \"CPU above 90%\", \"AWSAccountId\": \"123456789012\", \"NewStateValue\": \"ALARM\", \"NewStateReason\": \"Threshold Crossed\", \"StateChangeTime\": \"2026-11-26T09:00:00.000+0000\", \"Region\": \"US East (N. Virginia)\", \"OldStateValue\": \"OK\", \"Trigger\": {\"MetricName\": \"CPUUtilization\", \"Namespace\": \"AWS/EC2\"}}",
+    "Timestamp": "2026-11-26T09:00:00.000Z"
+   }
+  },
+  {
+   "key": "google_cloud_monitoring",
+   "name": "Google Cloud Monitoring",
+   "category": "Cloud",
+   "direction": "inbound",
+   "supported": false,
+   "summary": "Format defined. A direct receiver for this provider is not installed yet; the mapping below is what RelayOps expects. Uses a Cloud Monitoring webhook notification channel.",
+   "format": "Cloud Monitoring webhook v1.2",
+   "config_fields": [
+    {
+     "key": "source",
+     "label": "Source label",
+     "kind": "text",
+     "required": true,
+     "default": "gcp-monitoring",
+     "help": "Shown as the relay's source and used to group relays in analysis."
+    },
+    {
+     "key": "default_severity",
+     "label": "Default severity",
+     "kind": "select",
+     "required": true,
+     "default": "warning",
+     "options": [
+      "critical",
+      "error",
+      "warning",
+      "info"
+     ],
+     "help": "Used when the payload has no severity, or one RelayOps does not recognise."
+    },
+    {
+     "key": "default_service",
+     "label": "Default service",
+     "kind": "text",
+     "required": false,
+     "help": "Used when the payload does not identify a service."
+    },
+    {
+     "key": "project_id",
+     "label": "Project ID",
+     "kind": "text",
+     "required": false,
+     "help": "Google Cloud project (for reference).",
+     "placeholder": ""
+    }
+   ],
+   "payload_fields": [
+    {
+     "path": "incident.incident_id",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "dedup_key",
+     "description": "Incident id."
+    },
+    {
+     "path": "incident.policy_name",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "title",
+     "description": "Alerting policy name."
+    },
+    {
+     "path": "incident.summary",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "description",
+     "description": "Summary of the condition."
+    },
+    {
+     "path": "incident.severity",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "severity",
+     "description": "Critical, Error, or Warning."
+    },
+    {
+     "path": "incident.resource_name",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "service",
+     "description": "Affected resource."
+    },
+    {
+     "path": "incident.state",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "status",
+     "description": "open or closed."
+    },
+    {
+     "path": "incident.url",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "url",
+     "description": "Link to the incident."
+    }
+   ],
+   "severity_map": [
+    {
+     "from": "critical",
+     "to": "critical"
+    },
+    {
+     "from": "error",
+     "to": "error"
+    },
+    {
+     "from": "warning",
+     "to": "warning"
+    }
+   ],
+   "sender_template": null,
+   "sample_payload": {
+    "version": "1.2",
+    "incident": {
+     "incident_id": "0.abc123",
+     "scoping_project_id": "my-project",
+     "condition_name": "CPU utilization",
+     "policy_name": "High CPU",
+     "state": "open",
+     "summary": "CPU utilization for web-1 is above the threshold of 0.9 with a value of 0.95.",
+     "url": "https://console.cloud.google.com/monitoring/alerting/incidents/0.abc123",
+     "started_at": 1732611600,
+     "severity": "Critical",
+     "resource_name": "web-1"
+    }
+   }
+  },
+  {
+   "key": "azure_monitor",
+   "name": "Azure Monitor",
+   "category": "Cloud",
+   "direction": "inbound",
+   "supported": false,
+   "summary": "Format defined. A direct receiver for this provider is not installed yet; the mapping below is what RelayOps expects. Uses the Azure Monitor common alert schema.",
+   "format": "Azure Monitor common alert schema",
+   "config_fields": [
+    {
+     "key": "source",
+     "label": "Source label",
+     "kind": "text",
+     "required": true,
+     "default": "azure-monitor",
+     "help": "Shown as the relay's source and used to group relays in analysis."
+    },
+    {
+     "key": "default_severity",
+     "label": "Default severity",
+     "kind": "select",
+     "required": true,
+     "default": "warning",
+     "options": [
+      "critical",
+      "error",
+      "warning",
+      "info"
+     ],
+     "help": "Used when the payload has no severity, or one RelayOps does not recognise."
+    },
+    {
+     "key": "default_service",
+     "label": "Default service",
+     "kind": "text",
+     "required": false,
+     "help": "Used when the payload does not identify a service."
+    },
+    {
+     "key": "subscription_id",
+     "label": "Subscription ID",
+     "kind": "text",
+     "required": false,
+     "help": "Azure subscription (for reference).",
+     "placeholder": ""
+    }
+   ],
+   "payload_fields": [
+    {
+     "path": "data.essentials.alertId",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "dedup_key",
+     "description": "Alert id."
+    },
+    {
+     "path": "data.essentials.alertRule",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "title",
+     "description": "Alert rule name."
+    },
+    {
+     "path": "data.essentials.description",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "description",
+     "description": "Rule description."
+    },
+    {
+     "path": "data.essentials.severity",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "severity",
+     "description": "Sev0 (critical) to Sev4."
+    },
+    {
+     "path": "data.essentials.alertTargetIDs.0",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "service",
+     "description": "First affected resource id."
+    },
+    {
+     "path": "data.essentials.monitorCondition",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "status",
+     "description": "Fired or Resolved."
+    }
+   ],
+   "severity_map": [
+    {
+     "from": "Sev0",
+     "to": "critical"
+    },
+    {
+     "from": "Sev1",
+     "to": "error"
+    },
+    {
+     "from": "Sev2",
+     "to": "warning"
+    },
+    {
+     "from": "Sev3",
+     "to": "info"
+    },
+    {
+     "from": "Sev4",
+     "to": "info"
+    }
+   ],
+   "sender_template": null,
+   "sample_payload": {
+    "schemaId": "azureMonitorCommonAlertSchema",
+    "data": {
+     "essentials": {
+      "alertId": "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.AlertsManagement/alerts/b9569717",
+      "alertRule": "High CPU",
+      "severity": "Sev1",
+      "signalType": "Metric",
+      "monitorCondition": "Fired",
+      "monitoringService": "Platform",
+      "alertTargetIDs": [
+       "/subscriptions/00000000/resourcegroups/rg/providers/microsoft.compute/virtualmachines/web-1"
+      ],
+      "firedDateTime": "2026-11-26T09:00:00.000Z",
+      "description": "CPU above 90%",
+      "essentialsVersion": "1.0",
+      "alertContextVersion": "1.0"
+     },
+     "alertContext": {}
+    }
+   }
+  },
+  {
+   "key": "uptime_kuma",
+   "name": "Uptime Kuma",
+   "category": "Uptime",
+   "direction": "inbound",
+   "supported": false,
+   "summary": "Format defined. A direct receiver for this provider is not installed yet; the mapping below is what RelayOps expects. Uses Uptime Kuma's default webhook body.",
+   "format": "Uptime Kuma webhook",
+   "config_fields": [
+    {
+     "key": "source",
+     "label": "Source label",
+     "kind": "text",
+     "required": true,
+     "default": "uptime-kuma",
+     "help": "Shown as the relay's source and used to group relays in analysis."
+    },
+    {
+     "key": "default_severity",
+     "label": "Default severity",
+     "kind": "select",
+     "required": true,
+     "default": "warning",
+     "options": [
+      "critical",
+      "error",
+      "warning",
+      "info"
+     ],
+     "help": "Used when the payload has no severity, or one RelayOps does not recognise."
+    },
+    {
+     "key": "default_service",
+     "label": "Default service",
+     "kind": "text",
+     "required": false,
+     "help": "Used when the payload does not identify a service."
+    }
+   ],
+   "payload_fields": [
+    {
+     "path": "monitor.id",
+     "type": "number",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "dedup_key",
+     "description": "Monitor id; downtime updates one relay."
+    },
+    {
+     "path": "monitor.name",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "title",
+     "description": "Monitor name."
+    },
+    {
+     "path": "msg",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "description",
+     "description": "Heartbeat message."
+    },
+    {
+     "path": "monitor.name",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "service",
+     "description": "Monitor name."
+    },
+    {
+     "path": "heartbeat.status",
+     "type": "number",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "status",
+     "description": "0 down, 1 up, 2 pending, 3 maintenance."
+    },
+    {
+     "path": "monitor.url",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "url",
+     "description": "Monitored URL."
+    }
+   ],
+   "severity_map": [],
+   "sender_template": null,
+   "sample_payload": {
+    "heartbeat": {
+     "monitorID": 1,
+     "status": 0,
+     "time": "2026-11-26 09:00:00",
+     "msg": "connect ECONNREFUSED",
+     "important": true,
+     "duration": 0
+    },
+    "monitor": {
+     "id": 1,
+     "name": "Checkout",
+     "url": "https://checkout.example.com",
+     "type": "http"
+    },
+    "msg": "[Checkout] [Down] connect ECONNREFUSED"
+   }
+  },
+  {
+   "key": "uptimerobot",
+   "name": "UptimeRobot",
+   "category": "Uptime",
+   "direction": "inbound",
+   "supported": false,
+   "summary": "UptimeRobot webhook alert contact with a JSON body template.",
+   "format": "UptimeRobot webhook (RelayOps template)",
+   "config_fields": [
+    {
+     "key": "source",
+     "label": "Source label",
+     "kind": "text",
+     "required": true,
+     "default": "uptimerobot",
+     "help": "Shown as the relay's source and used to group relays in analysis."
+    },
+    {
+     "key": "default_severity",
+     "label": "Default severity",
+     "kind": "select",
+     "required": true,
+     "default": "warning",
+     "options": [
+      "critical",
+      "error",
+      "warning",
+      "info"
+     ],
+     "help": "Used when the payload has no severity, or one RelayOps does not recognise."
+    },
+    {
+     "key": "default_service",
+     "label": "Default service",
+     "kind": "text",
+     "required": false,
+     "help": "Used when the payload does not identify a service."
+    }
+   ],
+   "payload_fields": [
+    {
+     "path": "monitorID",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "dedup_key",
+     "description": "*monitorID*"
+    },
+    {
+     "path": "monitorFriendlyName",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "title",
+     "description": "*monitorFriendlyName*"
+    },
+    {
+     "path": "alertDetails",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "description",
+     "description": "*alertDetails*"
+    },
+    {
+     "path": "alertType",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "severity",
+     "description": "*alertType*: 1 down, 2 up, 3 SSL."
+    },
+    {
+     "path": "monitorFriendlyName",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "service",
+     "description": "*monitorFriendlyName*"
+    },
+    {
+     "path": "alertTypeFriendlyName",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "status",
+     "description": "*alertTypeFriendlyName*"
+    },
+    {
+     "path": "monitorURL",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "url",
+     "description": "*monitorURL*"
+    }
+   ],
+   "severity_map": [
+    {
+     "from": "1",
+     "to": "critical"
+    },
+    {
+     "from": "2",
+     "to": "info"
+    },
+    {
+     "from": "3",
+     "to": "warning"
+    }
+   ],
+   "sender_template": "{\"monitorID\":\"*monitorID*\",\"monitorURL\":\"*monitorURL*\",\"monitorFriendlyName\":\"*monitorFriendlyName*\",\"alertType\":\"*alertType*\",\"alertTypeFriendlyName\":\"*alertTypeFriendlyName*\",\"alertDetails\":\"*alertDetails*\"}",
+   "sample_payload": {
+    "monitorID": "777",
+    "monitorURL": "https://checkout.example.com",
+    "monitorFriendlyName": "Checkout",
+    "alertType": "1",
+    "alertTypeFriendlyName": "Down",
+    "alertDetails": "Connection Timeout"
+   }
+  },
+  {
+   "key": "pingdom",
+   "name": "Pingdom",
+   "category": "Uptime",
+   "direction": "inbound",
+   "supported": false,
+   "summary": "Format defined. A direct receiver for this provider is not installed yet; the mapping below is what RelayOps expects. Uses the Pingdom webhook integration.",
+   "format": "Pingdom webhook",
+   "config_fields": [
+    {
+     "key": "source",
+     "label": "Source label",
+     "kind": "text",
+     "required": true,
+     "default": "pingdom",
+     "help": "Shown as the relay's source and used to group relays in analysis."
+    },
+    {
+     "key": "default_severity",
+     "label": "Default severity",
+     "kind": "select",
+     "required": true,
+     "default": "warning",
+     "options": [
+      "critical",
+      "error",
+      "warning",
+      "info"
+     ],
+     "help": "Used when the payload has no severity, or one RelayOps does not recognise."
+    },
+    {
+     "key": "default_service",
+     "label": "Default service",
+     "kind": "text",
+     "required": false,
+     "help": "Used when the payload does not identify a service."
+    }
+   ],
+   "payload_fields": [
+    {
+     "path": "check_id",
+     "type": "number",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "dedup_key",
+     "description": "Check id; downtime updates one relay."
+    },
+    {
+     "path": "check_name",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "title",
+     "description": "Check name."
+    },
+    {
+     "path": "long_description",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "description",
+     "description": "Long description of the state change."
+    },
+    {
+     "path": "importance_level",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "severity",
+     "description": "HIGH or LOW."
+    },
+    {
+     "path": "check_name",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "service",
+     "description": "Check name."
+    },
+    {
+     "path": "current_state",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "status",
+     "description": "UP or DOWN."
+    },
+    {
+     "path": "check_params.full_url",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "url",
+     "description": "Checked URL."
+    }
+   ],
+   "severity_map": [
+    {
+     "from": "HIGH",
+     "to": "critical"
+    },
+    {
+     "from": "LOW",
+     "to": "warning"
+    }
+   ],
+   "sender_template": null,
+   "sample_payload": {
+    "check_id": 4521,
+    "check_name": "Checkout",
+    "check_type": "HTTP",
+    "check_params": {
+     "full_url": "https://checkout.example.com/",
+     "hostname": "checkout.example.com"
+    },
+    "previous_state": "UP",
+    "current_state": "DOWN",
+    "importance_level": "HIGH",
+    "state_changed_timestamp": 1732611600,
+    "long_description": "Checkout is not responding",
+    "description": "down"
+   }
+  },
+  {
+   "key": "healthchecks_io",
+   "name": "Healthchecks.io",
+   "category": "Uptime",
+   "direction": "inbound",
+   "supported": false,
+   "summary": "Healthchecks.io webhook integration with a request body template.",
+   "format": "Healthchecks.io webhook (RelayOps template)",
+   "config_fields": [
+    {
+     "key": "source",
+     "label": "Source label",
+     "kind": "text",
+     "required": true,
+     "default": "healthchecks",
+     "help": "Shown as the relay's source and used to group relays in analysis."
+    },
+    {
+     "key": "default_severity",
+     "label": "Default severity",
+     "kind": "select",
+     "required": true,
+     "default": "warning",
+     "options": [
+      "critical",
+      "error",
+      "warning",
+      "info"
+     ],
+     "help": "Used when the payload has no severity, or one RelayOps does not recognise."
+    },
+    {
+     "key": "default_service",
+     "label": "Default service",
+     "kind": "text",
+     "required": false,
+     "help": "Used when the payload does not identify a service."
+    }
+   ],
+   "payload_fields": [
+    {
+     "path": "code",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "dedup_key",
+     "description": "$CODE"
+    },
+    {
+     "path": "name",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "title",
+     "description": "$NAME"
+    },
+    {
+     "path": "status",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "severity",
+     "description": "$STATUS: up or down."
+    },
+    {
+     "path": "status",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "status",
+     "description": "$STATUS"
+    },
+    {
+     "path": "name",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "service",
+     "description": "$NAME"
+    }
+   ],
+   "severity_map": [
+    {
+     "from": "down",
+     "to": "critical"
+    },
+    {
+     "from": "up",
+     "to": "info"
+    }
+   ],
+   "sender_template": "{\"code\":\"$CODE\",\"name\":\"$NAME\",\"status\":\"$STATUS\",\"tags\":\"$TAGS\"}",
+   "sample_payload": {
+    "code": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "Nightly backup",
+    "status": "down",
+    "tags": "prod backups"
+   }
+  },
+  {
+   "key": "github_actions",
+   "name": "GitHub Actions",
+   "category": "CI/CD",
+   "direction": "inbound",
+   "supported": false,
+   "summary": "Format defined. A direct receiver for this provider is not installed yet; the mapping below is what RelayOps expects. Uses the workflow_run webhook event; send only failed runs.",
+   "format": "GitHub workflow_run webhook",
+   "config_fields": [
+    {
+     "key": "source",
+     "label": "Source label",
+     "kind": "text",
+     "required": true,
+     "default": "github-actions",
+     "help": "Shown as the relay's source and used to group relays in analysis."
+    },
+    {
+     "key": "default_severity",
+     "label": "Default severity",
+     "kind": "select",
+     "required": true,
+     "default": "warning",
+     "options": [
+      "critical",
+      "error",
+      "warning",
+      "info"
+     ],
+     "help": "Used when the payload has no severity, or one RelayOps does not recognise."
+    },
+    {
+     "key": "default_service",
+     "label": "Default service",
+     "kind": "text",
+     "required": false,
+     "help": "Used when the payload does not identify a service."
+    },
+    {
+     "key": "repository",
+     "label": "Repository",
+     "kind": "text",
+     "required": false,
+     "help": "owner/name (for reference).",
+     "placeholder": "acme/checkout"
+    }
+   ],
+   "payload_fields": [
+    {
+     "path": "workflow_run.id",
+     "type": "number",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "dedup_key",
+     "description": "Run id."
+    },
+    {
+     "path": "workflow_run.name",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "title",
+     "description": "Workflow name."
+    },
+    {
+     "path": "workflow_run.head_commit.message",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "description",
+     "description": "Commit message of the run."
+    },
+    {
+     "path": "workflow_run.conclusion",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "severity",
+     "description": "failure, timed_out, cancelled, success, ..."
+    },
+    {
+     "path": "repository.full_name",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "service",
+     "description": "owner/repository."
+    },
+    {
+     "path": "workflow_run.conclusion",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "status",
+     "description": "Run conclusion."
+    },
+    {
+     "path": "workflow_run.html_url",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "url",
+     "description": "Link to the run."
+    }
+   ],
+   "severity_map": [
+    {
+     "from": "failure",
+     "to": "error"
+    },
+    {
+     "from": "timed_out",
+     "to": "error"
+    },
+    {
+     "from": "action_required",
+     "to": "warning"
+    },
+    {
+     "from": "cancelled",
+     "to": "info"
+    },
+    {
+     "from": "success",
+     "to": "info"
+    },
+    {
+     "from": "neutral",
+     "to": "info"
+    },
+    {
+     "from": "skipped",
+     "to": "info"
+    }
+   ],
+   "sender_template": null,
+   "sample_payload": {
+    "action": "completed",
+    "workflow_run": {
+     "id": 10293847,
+     "name": "CI",
+     "head_branch": "main",
+     "conclusion": "failure",
+     "html_url": "https://github.com/acme/checkout/actions/runs/10293847",
+     "run_number": 42,
+     "event": "push",
+     "head_commit": {
+      "message": "Fix cart rounding"
+     }
+    },
+    "workflow": {
+     "name": "CI"
+    },
+    "repository": {
+     "full_name": "acme/checkout"
+    }
+   }
+  },
+  {
+   "key": "jenkins",
+   "name": "Jenkins",
+   "category": "CI/CD",
+   "direction": "inbound",
+   "supported": false,
+   "summary": "Format defined. A direct receiver for this provider is not installed yet; the mapping below is what RelayOps expects. Uses the Jenkins Notification plugin JSON format.",
+   "format": "Jenkins Notification plugin",
+   "config_fields": [
+    {
+     "key": "source",
+     "label": "Source label",
+     "kind": "text",
+     "required": true,
+     "default": "jenkins",
+     "help": "Shown as the relay's source and used to group relays in analysis."
+    },
+    {
+     "key": "default_severity",
+     "label": "Default severity",
+     "kind": "select",
+     "required": true,
+     "default": "warning",
+     "options": [
+      "critical",
+      "error",
+      "warning",
+      "info"
+     ],
+     "help": "Used when the payload has no severity, or one RelayOps does not recognise."
+    },
+    {
+     "key": "default_service",
+     "label": "Default service",
+     "kind": "text",
+     "required": false,
+     "help": "Used when the payload does not identify a service."
+    },
+    {
+     "key": "instance_url",
+     "label": "Jenkins URL",
+     "kind": "text",
+     "required": false,
+     "help": "Controller address (for reference).",
+     "placeholder": "https://jenkins.example.com"
+    }
+   ],
+   "payload_fields": [
+    {
+     "path": "name",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "dedup_key",
+     "description": "Job name; repeat failures update one relay."
+    },
+    {
+     "path": "name",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "title",
+     "description": "Job name."
+    },
+    {
+     "path": "build.status",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "severity",
+     "description": "SUCCESS, FAILURE, UNSTABLE, or ABORTED."
+    },
+    {
+     "path": "name",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "service",
+     "description": "Job name."
+    },
+    {
+     "path": "build.status",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "status",
+     "description": "Build status."
+    },
+    {
+     "path": "build.full_url",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "url",
+     "description": "Link to the build."
+    }
+   ],
+   "severity_map": [
+    {
+     "from": "FAILURE",
+     "to": "error"
+    },
+    {
+     "from": "UNSTABLE",
+     "to": "warning"
+    },
+    {
+     "from": "ABORTED",
+     "to": "info"
+    },
+    {
+     "from": "SUCCESS",
+     "to": "info"
+    }
+   ],
+   "sender_template": null,
+   "sample_payload": {
+    "name": "checkout-build",
+    "url": "job/checkout-build/",
+    "build": {
+     "full_url": "https://jenkins.example.com/job/checkout-build/42/",
+     "number": 42,
+     "phase": "FINALIZED",
+     "status": "FAILURE",
+     "url": "job/checkout-build/42/"
+    }
+   }
+  },
+  {
+   "key": "gitlab_ci",
+   "name": "GitLab CI",
+   "category": "CI/CD",
+   "direction": "inbound",
+   "supported": false,
+   "summary": "Format defined. A direct receiver for this provider is not installed yet; the mapping below is what RelayOps expects. Uses GitLab pipeline events.",
+   "format": "GitLab pipeline webhook",
+   "config_fields": [
+    {
+     "key": "source",
+     "label": "Source label",
+     "kind": "text",
+     "required": true,
+     "default": "gitlab-ci",
+     "help": "Shown as the relay's source and used to group relays in analysis."
+    },
+    {
+     "key": "default_severity",
+     "label": "Default severity",
+     "kind": "select",
+     "required": true,
+     "default": "warning",
+     "options": [
+      "critical",
+      "error",
+      "warning",
+      "info"
+     ],
+     "help": "Used when the payload has no severity, or one RelayOps does not recognise."
+    },
+    {
+     "key": "default_service",
+     "label": "Default service",
+     "kind": "text",
+     "required": false,
+     "help": "Used when the payload does not identify a service."
+    }
+   ],
+   "payload_fields": [
+    {
+     "path": "object_attributes.id",
+     "type": "number",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "dedup_key",
+     "description": "Pipeline id."
+    },
+    {
+     "path": "project.path_with_namespace",
+     "type": "string",
+     "required": true,
+     "mandatory": true,
+     "maps_to": "title",
+     "description": "Group/project path."
+    },
+    {
+     "path": "commit.message",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "description",
+     "description": "Commit message."
+    },
+    {
+     "path": "object_attributes.status",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "severity",
+     "description": "failed, canceled, success, ..."
+    },
+    {
+     "path": "project.name",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "service",
+     "description": "Project name."
+    },
+    {
+     "path": "object_attributes.status",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "status",
+     "description": "Pipeline status."
+    },
+    {
+     "path": "project.web_url",
+     "type": "string",
+     "required": false,
+     "mandatory": false,
+     "maps_to": "url",
+     "description": "Project URL."
+    }
+   ],
+   "severity_map": [
+    {
+     "from": "failed",
+     "to": "error"
+    },
+    {
+     "from": "canceled",
+     "to": "info"
+    },
+    {
+     "from": "success",
+     "to": "info"
+    },
+    {
+     "from": "skipped",
+     "to": "info"
+    }
+   ],
+   "sender_template": null,
+   "sample_payload": {
+    "object_kind": "pipeline",
+    "object_attributes": {
+     "id": 31,
+     "ref": "main",
+     "status": "failed",
+     "detailed_status": "failed"
+    },
+    "project": {
+     "name": "checkout",
+     "web_url": "https://gitlab.example.com/acme/checkout",
+     "path_with_namespace": "acme/checkout"
+    },
+    "commit": {
+     "message": "Fix cart rounding"
+    }
+   }
+  }
+ ]
+}
