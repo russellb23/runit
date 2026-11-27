@@ -1,9 +1,6 @@
-use axum::{
-    routing::{get, post, put},
-    Router,
-};
+use axum::{ routing::{ get, post, put }, Router };
 
-use crate::{relay_workflow as w, AppState};
+use crate::{ relay_workflow as w, AppState };
 
 /// Assignment, spikes, team leads, responder lookup, and the demo relay.
 pub(super) fn router() -> Router<AppState> {
