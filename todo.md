@@ -32,7 +32,7 @@ possible to complete a relay.
 - [x] Mean time to complete a run by user, team/group
 - [x] leader-board of users by numbers, mttr, mtat
 - [x] Group navigations into 4-5 navigation groups.
-- [x] Role-based configuration options (functional-api:frontend-UI).
+- [ ] Role-based configuration options (functional-api:frontend-UI).
 - [ ] Automated relay creation based on incident type, characteristics (NLP) 
     over-riding default/created relay routes under anomalous situations.
 - [ ] Reset API keys feature
@@ -45,3 +45,14 @@ possible to complete a relay.
 - [ ] Default should be collapsed state for all navigations
 - [ ] Users and Channels: option to display as grid/list alphabetically/list by
     user added sequence/reverse alphabetic sequence
+- [ ] Make e-mail channel for all the users a mandatory when registering them
+- [ ] Change relays back to incidents. And alerts should be relays
+- [ ] Link e-mail to specific roles such as responder, viewer, owner etc.,
+- [ ] Real-time graph should plot aggregated number of alerts per unit of time 
+    where unit of time should be configurable.
+- [ ] Fix role based access and login:
+        Upon first time login for a new tenant: create users and their roles
+    and then users of the tenant should be able to login with their e-mail and 
+    a default passcode for the first time and upon login they should be able to 
+    change the default password to their own new password. This flow should be 
+    followed
